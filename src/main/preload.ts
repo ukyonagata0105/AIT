@@ -1,0 +1,39 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    // PTY operations
+    ptyCreate: (args: { id: string; cwd: string; cols: number; rows: number }) =>
+        ipcRenderer.invoke('pty:create', args),
+    ptyInput: (args: { id: string; data: string }) =>
+        ipcRenderer.send('pty:input', args),
+    ptyResize: (args: { id: string; cols: number; rows: number }) =>
+        ipcRenderer.send('pty:resize', args),
+    ptyKill: (args: { id: string }) =>
+        ipcRenderer.send('pty:kill', args),
+    onPtyData: (callback: (args: { id: string; data: string }) => void) => {
+        ipcRenderer.on('pty:data', (_event, args) => callback(args));
+    },
+    onPtyExit: (callback: (args: { id: string; exitCode: number }) => void) => {
+        ipcRenderer.on('pty:exit', (_event, args) => callback(args));
+    },
+
+    // Workspace operations
+    workspacesLoad: () => ipcRenderer.invoke('workspaces:load'),
+    workspacesSave: (workspaces: unknown[]) => ipcRenderer.invoke('workspaces:save', workspaces),
+    workspacesAdd: () => ipcRenderer.invoke('workspaces:add'),
+    workspacesRename: (id: string, name: string) => ipcRenderer.invoke('workspaces:rename', id, name),
+    workspacesDelete: (id: string) => ipcRenderer.invoke('workspaces:delete', id),
+
+    // File system
+    fsReadDir: (path: string) => ipcRenderer.invoke('fs:readDir', path),
+    fsReadFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
+
+    // Shell exec (for VS Code CLI)
+    execRun: (cmd: string) => ipcRenderer.invoke('exec:run', cmd),
+
+    // Extension Marketplace
+    extSearch: (query: string) => ipcRenderer.invoke('ext:search', query),
+    onExtensionInstall: (callback: (id: string) => void) => {
+        ipcRenderer.on('extension:install', (_event, id) => callback(id));
+    },
+});
