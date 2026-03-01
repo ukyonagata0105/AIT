@@ -130,16 +130,7 @@ export function startWebServer(port: number = 4096): void {
         };
 
         const pty = getPtyManager();
-
-        // Auto-attach to existing PTY if any (for sharing with Electron)
-        const existingSessions = pty.getSessionIds();
-        if (existingSessions.length > 0) {
-            currentPtyId = existingSessions[0];
-            isSharedSession = true;
-            console.log(`[WebServer] Auto-attaching to existing shared PTY: ${currentPtyId}`);
-            ws.send(JSON.stringify({ type: 'attached', id: currentPtyId }));
-        }
-
+        
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
 
@@ -150,7 +141,9 @@ export function startWebServer(port: number = 4096): void {
                 switch (msg.type) {
                     case 'create':
                         currentPtyId = msg.id;
+                        isSharedSession = false;  // Web-created PTY, kill on disconnect
                         pty.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
+                        console.log(`[WebServer] Created remote PTY: ${msg.id}`);
                         break;
                     case 'watch':
                         // Watch existing PTY (attach to Electron's PTY)

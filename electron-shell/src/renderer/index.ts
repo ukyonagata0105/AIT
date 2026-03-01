@@ -57,63 +57,36 @@ let wsWatchPtyId: string | null = null;  // PTY ID when in watch mode
 
 function initWebSocket(): Promise<void> {
     return new Promise((resolve) => {
-        if (webSocket && wsReady && wsWatchPtyId) {
+        if (webSocket && wsReady) {
             resolve();
             return;
         }
-
+        
         // Determine WebSocket URL from current page URL
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}`;
-
+        
         console.log('[WebMode] Connecting to WebSocket:', wsUrl);
         webSocket = new WebSocket(wsUrl);
-
-        // Timeout for waiting 'attached' message
-        let attachedTimeout: ReturnType<typeof setTimeout> | null = null;
-
+        
         webSocket.onopen = () => {
-            console.log('[WebMode] WebSocket connected');
+            console.log('[WebMode] WebSocket connected - remote control ready');
             wsReady = true;
-            // Wait for 'attached' message with timeout
-            attachedTimeout = setTimeout(() => {
-                console.log('[WebMode] No attached message received, proceeding anyway');
-                resolve();
-            }, 3000);
+            resolve();
         };
-
+        
         webSocket.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
-
-                // Handle 'attached' message - web is now watching an existing PTY
-                if (msg.type === 'attached') {
-                    wsWatchPtyId = msg.id;
-                    console.log('[WebMode] Attached to existing PTY:', msg.id);
-                    // Set activePtyId so terminal data gets displayed
-                    activePtyId = msg.id;
-                    // Clear timeout and resolve
-                    if (attachedTimeout) {
-                        clearTimeout(attachedTimeout);
-                        attachedTimeout = null;
-                    }
-                    resolve();
-                }
-
                 wsMessageHandlers.forEach(handler => handler(msg));
             } catch (e) {
                 console.error('[WebMode] Error parsing WebSocket message:', e);
             }
         };
-
+        
         webSocket.onclose = () => {
             console.log('[WebMode] WebSocket disconnected');
             wsReady = false;
-            wsWatchPtyId = null; // Clear on disconnect
-            if (attachedTimeout) {
-                clearTimeout(attachedTimeout);
-                attachedTimeout = null;
-            }
             // Try to reconnect after 2 seconds
             setTimeout(() => {
                 if (!isElectron) {
@@ -121,14 +94,10 @@ function initWebSocket(): Promise<void> {
                 }
             }, 2000);
         };
-
+        
         webSocket.onerror = (error) => {
             console.error('[WebMode] WebSocket error:', error);
             wsReady = false;
-            if (attachedTimeout) {
-                clearTimeout(attachedTimeout);
-                attachedTimeout = null;
-            }
             resolve(); // Resolve anyway to not block initialization
         };
     });
@@ -148,28 +117,9 @@ const api = {
     // PTY operations (WebSocket in web mode)
     ptyCreate: async (args: { id: string; cwd: string; cols: number; rows: number }) => {
         if (isElectron) return window.electronAPI!.ptyCreate(args);
-        // Web mode: send via WebSocket
-        if (wsWatchPtyId) {
-            // Already attached to existing PTY - just confirm
-            console.log('[WebMode] Already watching PTY:', wsWatchPtyId);
-            return { ok: true };
-        }
-        // Check if we can attach to existing PTY
-        try {
-            const resp = await fetch('/api/pty/list');
-            const data = await resp.json();
-            if (data.sessions && data.sessions.length > 0) {
-                // Attach to existing PTY instead of creating new one
-                wsSend({ type: 'watch', id: data.sessions[0] });
-                console.log('[WebMode] Attached to existing PTY:', data.sessions[0]);
-            } else {
-                // No existing PTY, create new one
-                wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
-            }
-        } catch (e) {
-            // Fallback: create new PTY
-            wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
-        }
+        // Web mode: send create request to local machine via WebSocket (remote control)
+        console.log('[WebMode] Remote control: creating PTY on local machine:', args.id);
+        wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
         return { ok: true };
     },
     ptyInput: (args: { id: string; data: string }) => {
@@ -1348,8 +1298,7 @@ function createTerminalTab(cwd: string): TerminalTab {
         title: 'Terminal',
         term,
         fitAddon,
-        // In web mode, use the shared PTY ID immediately
-        ptyId: (!isElectron && wsWatchPtyId) ? wsWatchPtyId : ptyId,
+        ptyId,  // Always use new PTY ID (remote control)
         container,
         cell: undefined
     };
@@ -1364,12 +1313,8 @@ function createTerminalTab(cwd: string): TerminalTab {
         try {
             fitAddon.fit();
             const { cols, rows } = term;
-            // In web mode, don't create new PTY - we're sharing Electron's PTY
-            if (isElectron) {
-                api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
-            } else {
-                console.log('[WebMode] Using shared PTY:', tab.ptyId);
-            }
+            // Always call ptyCreate - in web mode it sends command to local machine
+            api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
         } catch (e) {
             console.error('Error creating PTY:', e);
         }
