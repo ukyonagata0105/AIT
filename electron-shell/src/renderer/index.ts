@@ -1306,30 +1306,35 @@ function createTerminalTab(cwd: string): TerminalTab {
         title: 'Terminal',
         term,
         fitAddon,
-        // In web mode with existing PTY, use that instead of creating new one
-        ptyId: (!isElectron && wsWatchPtyId) ? wsWatchPtyId : ptyId,
+        ptyId,
         container,
         cell: undefined
     };
 
     // Add to workspace's tabs
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
+    const isFirstTab = tabs.length === 0;
     tabs.push(tab);
     workspaceTerminals.set(activeWorkspaceId!, tabs);
 
     // Create PTY (non-blocking)
     requestAnimationFrame(() => {
         try {
-            fitAddon.fit();
-            const { cols, rows } = term;
+            // Use terminal's current size (will be resized after fit)
+            const cols = term.cols || 80;
+            const rows = term.rows || 24;
+            
             if (isElectron) {
                 // Electron mode: always create new PTY
                 api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
-            } else if (wsWatchPtyId) {
-                // Web mode with existing PTY: just use it, don't create new one
-                console.log('[WebMode] Using synced PTY:', tab.ptyId);
+            } else if (isFirstTab && wsWatchPtyId) {
+                // Web mode: first tab uses synced PTY from Electron
+                tab.ptyId = wsWatchPtyId;
+                console.log('[WebMode] First tab using synced PTY:', wsWatchPtyId);
+                wsWatchPtyId = null;  // Clear so next tab creates new PTY
             } else {
-                // Web mode without existing PTY: create new one
+                // Web mode: create new PTY on local machine (remote control)
+                console.log('[WebMode] Creating new PTY on local machine:', tab.ptyId);
                 api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
             }
         } catch (e) {
@@ -1348,6 +1353,15 @@ function createTerminalTab(cwd: string): TerminalTab {
     // Render grid and switch to new tab
     renderTerminalGrid();
     switchTerminalTab(tabId);
+    
+    // Fit terminal after it's added to DOM
+    requestAnimationFrame(() => {
+        try {
+            fitAddon.fit();
+        } catch (e) {
+            console.error('Error fitting terminal:', e);
+        }
+    });
 
     return tab;
 }
