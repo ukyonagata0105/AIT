@@ -15,8 +15,10 @@
         "start": "npm run build && electron .",
         "start:web": "npm run build && electron . --web",
         "test": "npm run build && playwright test",
-        "test:headed": "npm run build && playwright test --headed"
-    },
+        "test:headed": "npm run build && playwright test --headed",
+        "pack": "npm run build && electron-builder --dir",
+        "dist": "npm run build && electron-builder"
+},
     "devDependencies": {
         "@electron/rebuild": "^4.0.3",
         "@playwright/test": "^1.58.2",
@@ -26,6 +28,7 @@
         "concurrently": "^8.0.0",
         "cross-env": "^7.0.0",
         "electron": "^29.0.0",
+        "electron-builder": "^26.8.1",
         "esbuild": "^0.20.0",
         "playwright": "^1.58.2",
         "typescript": "^5.0.0",
@@ -40,5 +43,54 @@
         "node-pty": "^1.0.0",
         "playwright-core": "^1.58.2",
         "ws": "^8.19.0"
+    }
+,
+    "build": {
+        "appId": "com.aiterminal.ide",
+        "productName": "AI Terminal IDE",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "dist/**/*",
+            "node_modules/**/*",
+            "package.json"
+        ],
+        "mac": {
+            "category": "public.app-category.developer-tools",
+            "target": [
+                {
+                    "target": "dmg",
+                    "arch": [
+                        "x64",
+                        "arm64"
+                    ]
+                }
+            ],
+            "icon": "assets/icon.icns"
+        },
+        "dmg": {
+            "contents": [
+                {
+                    "x": 130,
+                    "y": 220
+                },
+                {
+                    "x": 410,
+                    "y": 220,
+                    "type": "link",
+                    "path": "/Applications"
+                }
+            ]
+        },
+        "extraResources": [
+            {
+                "from": "assets",
+                "to": "assets",
+                "filter": [
+                    "**/*"
+                ]
+            }
+        ]
     }
 }

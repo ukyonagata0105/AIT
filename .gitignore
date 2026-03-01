@@ -31,3 +31,19 @@ npm-debug.log*
 .tmp/
 temp/
 tmp/
+
+# Electron-builder output
+release/
+*.dmg
+*.AppImage
+*.snap
+*.deb
+*.rpm
+
+# Playwright output
+playwright-report/
+playwright/.cache/
+
+# Development documentation
+AGENTS.md
+.cursor/

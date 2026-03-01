@@ -1,41 +1,166 @@
-# AI-Native Terminal IDE
+# AI Terminal IDE
 
-A terminal-first, tab-based IDE wrapper around an AI agentic development environment (e.g. OpenCode, Claude Code). This leverages Electron, xterm.js, and modern web technologies to create a seamless developer experience heavily focused on CLI workflows and multi-project management.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
 
-## Key Features & UI Layout
+---
 
-1. **Left Workspace Bar (Activity Bar)**:
-   - A vertical list of your workspaces (projects).
-   - Click to switch between different project contexts instantly. The central terminal and right explorer will immediately re-focus on the selected project directory.
-   - Use the `+` button at the bottom to add a new workspace folder.
-   - Right-click workspaces to change their color tag, rename them, or remove them.
+## English
 
-2. **Central Terminal (Main Area)**:
-   - The primary interactive area of the IDE, built on `xterm.js` and `node-pty`. 
-   - Tab minimal design ensures you can focus on terminal outputs rather than managing dozens of tabs.
+### Overview
 
-3. **Bottom Broadcast Bar**:
-   - The broadcast bar is located at the bottom of the Terminal area.
-   - **"Broadcast" Checkbox**: When checked, keystrokes typed into the currently active terminal are instantly mirrored and sent to *all* other active workspace terminals. This is extremely useful if you need to run the same background task, build command, or Git operation across multiple microservice repositories simultaneously.
-   - Remember to turn "Broadcast" off when you wish to type a command meant only for the current workspace.
+**AI Terminal IDE** is a terminal-first IDE designed for developers who use agentic coding tools (OpenCode, Claude Code CLI) for intellectual production. It provides a stress-free, terminal-focused coding environment with the ability to continue work remotely from external devices.
 
-4. **Right Activity & Panel**:
-   - The far-right icon bar lets you toggle the contents of the right-hand panel.
-   - **Explorer (📂)**: Displays a file tree of the active workspace. Clicking a file previews it in the viewer directly above the tree.
-   - **Extensions (🧩)**: Embeds the official VS Code marketplace, allowing you to seamlessly search and install extensions in the background without opening a browser.
+![Main Interface](./assets/screenshot-main.png)
 
-5. **Settings & Themes**:
-   - Access the Settings (gear icon) in the top-left area to manage workspaces manually or switch visual themes.
-   - Full support for unified themes, altering the UI panels, borders, and term colors seamlessly (e.g. Dark, Tokyo Night, Light, Solarized Light).
+### Key Features
 
-## Setting up locally
+- **Terminal-First Design**: Built on `xterm.js` and `node-pty` for native terminal experience
+- **Multi-Project Management**: Slack-like workspace bar for switching between projects instantly
+- **Remote Access**: Web mode allows controlling the IDE from external devices via browser
+- **Broadcast Mode**: Send keystrokes to all workspace terminals simultaneously
+- **Integrated File Explorer**: Browse and preview files directly in the IDE
+- **Built-in Browser Panel**: Embedded webview for documentation/research without leaving the IDE
+- **Theme Support**: Multiple themes including Dark, Tokyo Night, Light, Solarized
+
+### UI Layout
+
+![Browser Panel](./assets/screenshot-browser.png)
+
+1. **Left Workspace Bar**: Switch between projects instantly
+2. **Central Terminal**: Primary interactive area with tab-based interface
+3. **Bottom Broadcast Bar**: Mirror keystrokes across all terminals
+4. **Right Panel**: File explorer, image viewer, PDF viewer, and browser
+
+### Installation
+
+#### Download DMG (Recommended)
+
+Download the latest DMG installer from [Releases](https://github.com/your-repo/releases).
+
+#### Build from Source
+
 ```bash
-# 1. Install dependencies
+# Clone the repository
+git clone https://github.com/your-repo/ai-terminal-ide.git
+cd ai-terminal-ide/electron-shell
+
+# Install dependencies
 npm install
 
-# 2. Build the app
+# Build the app
 npm run build
 
-# 3. Start the application
+# Start the application
 npm run start
 ```
+
+### Development
+
+```bash
+# Development mode with hot reload
+npm run dev
+
+# Run tests
+npm test
+```
+
+### Remote Access (Web Mode)
+
+Start the IDE with web mode to enable remote access:
+
+```bash
+npm run start:web
+```
+
+Then access from any browser: `http://YOUR_IP:4096`
+
+---
+
+## 日本語
+
+### 概要
+
+**AI Terminal IDE** は、エージェンティックコーディング（OpenCode、Claude Code CLI）を活用した知的生産を行う開発者のために設計されたターミナルファーストのIDEです。ストレスなくターミナルに集中したコーディングを行いながら、外部からもホストマシンを操作して作業を継続できる仕組みを提供します。
+
+![メイン画面](./assets/screenshot-main.png)
+
+### 主な機能
+
+- **ターミナルファーストデザイン**: `xterm.js` と `node-pty` によるネイティブなターミナル体験
+- **マルチプロジェクト管理**: Slackライクなワークスペースバーでプロジェクト間を瞬時に切り替え
+- **リモートアクセス**: ブラウザ経由で外部デバイスからIDEを操作可能なWebモード
+- **ブロードキャストモード**: 全ワークスペースのターミナルに同時にキーストロークを送信
+- **統合ファイルエクスプローラー**: IDE内でファイルをブラウズ・プレビュー
+- **内蔵ブラウザパネル**: IDEを離れずにドキュメントやリサーチが可能
+- **テーマ対応**: ダーク、Tokyo Night、ライト、Solarized など複数のテーマをサポート
+
+### UIレイアウト
+
+![ブラウザパネル](./assets/screenshot-browser.png)
+
+1. **左ワークスペースバー**: プロジェクト間を瞬時に切り替え
+2. **中央ターミナル**: タブベースのメイン操作エリア
+3. **下部ブロードキャストバー**: 全ターミナルにキーストロークを同期
+4. **右パネル**: ファイルエクスプローラー、画像ビューア、PDFビューア、ブラウザ
+
+### インストール
+
+#### DMGからインストール（推奨）
+
+[Releases](https://github.com/your-repo/releases) から最新のDMGインストーラーをダウンロードしてください。
+
+#### ソースからビルド
+
+```bash
+# リポジトリをクローン
+git clone https://github.com/your-repo/ai-terminal-ide.git
+cd ai-terminal-ide/electron-shell
+
+# 依存関係をインストール
+npm install
+
+# ビルド
+npm run build
+
+# 起動
+npm run start
+```
+
+### 開発
+
+```bash
+# ホットリロード付き開発モード
+npm run dev
+
+# テスト実行
+npm test
+```
+
+### リモートアクセス（Webモード）
+
+Webモードで起動するとリモートアクセスが有効になります：
+
+```bash
+npm run start:web
+```
+
+任意のブラウザからアクセス: `http://YOUR_IP:4096`
+
+---
+
+## Tech Stack
+
+- **Electron** - Cross-platform desktop apps
+- **xterm.js** - Terminal emulator component
+- **node-pty** - Pseudo terminal for Node.js
+- **esbuild** - Fast bundler
+- **TypeScript** - Type-safe JavaScript
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
