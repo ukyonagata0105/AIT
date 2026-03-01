@@ -1,9 +1,9 @@
 import { EventEmitter } from 'events';
 import * as pty from 'node-pty';
 import * as os from 'os';
+import { getSafeEnv } from './security';
 
 const SHELL = process.env.SHELL || (os.platform() === 'win32' ? 'cmd.exe' : 'bash');
-
 interface PtySession {
     pty: pty.IPty;
 }
@@ -28,7 +28,7 @@ export class PtyManager extends EventEmitter {
                 rows: rows || 24,
                 cwd,
                 env: {
-                    ...process.env,
+                    ...getSafeEnv(),
                     TERM: 'xterm-256color',
                     COLORTERM: 'truecolor',
                     BROWSER_CDP_URL: 'http://localhost:9223',

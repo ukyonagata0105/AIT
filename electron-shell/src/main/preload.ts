@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+// Shared types
+interface WorkspaceConfig {
+    id: string;
+    name: string;
+    path: string;
+    color?: string;
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
     // PTY operations
     ptyCreate: (args: { id: string; cwd: string; cols: number; rows: number }) =>
@@ -19,7 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Workspace operations
     workspacesLoad: () => ipcRenderer.invoke('workspaces:load'),
-    workspacesSave: (workspaces: unknown[]) => ipcRenderer.invoke('workspaces:save', workspaces),
+    workspacesSave: (workspaces: WorkspaceConfig[]) => ipcRenderer.invoke('workspaces:save', workspaces),
     workspacesAdd: () => ipcRenderer.invoke('workspaces:add'),
     workspacesRename: (id: string, name: string) => ipcRenderer.invoke('workspaces:rename', id, name),
     workspacesDelete: (id: string) => ipcRenderer.invoke('workspaces:delete', id),

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, nativeImage, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -8,6 +8,7 @@ import { PtyManager } from './ptyManager';
 import { PlaywrightAltMcp } from './mcpServer';
 import { deploySkillsToWorkspace, deployGlobalSkills, markShutdown } from './skillsManager';
 import { startWebServer, setSharedPtyManager } from './webServer';
+import { validatePath, isValidFilePath, isSafeToRead, IPCResponse } from './security';
 const CONFIG_PATH = path.join(os.homedir(), '.ai-terminal-ide', 'workspaces.json');
 
 // Enable remote debugging for Playwright ALT integration
@@ -95,6 +96,27 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
     
     console.log('[createWindow] Done');
+}
+
+// ─── Content Security Policy ─────────────────────────────────────────────────
+function setupCSP() {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [
+                    "default-src 'self'; " +
+                    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+                    "style-src 'self' 'unsafe-inline' https:; " +
+                    "img-src 'self' data: https: blob:; " +
+                    "font-src 'self' data:; " +
+                    "connect-src 'self' ws: wss: https:; " +
+                    "frame-src 'self' https:; " +
+                    "frame-ancestors 'self';"
+                ]
+            }
+        });
+    });
 }
 
 // ─── Webview Interception ────────────────────────────────────────────────────
@@ -209,22 +231,54 @@ ipcMain.handle('workspaces:delete', async (_event, id: string) => {
 });
 
 // FS: read directory
-ipcMain.handle('fs:readDir', async (_event, dirPath: string) => {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    return entries.map(e => {
-        let mtime = 0, size = 0;
-        try {
-            const stat = fs.statSync(`${dirPath}/${e.name}`);
-            mtime = stat.mtimeMs;
-            size = stat.size;
-        } catch { }
-        return { name: e.name, isDir: e.isDirectory(), mtime, size };
-    });
+ipcMain.handle('fs:readDir', async (_event, dirPath: string): Promise<IPCResponse> => {
+    try {
+        // Validate path
+        if (!isValidFilePath(dirPath)) {
+            return { success: false, error: 'Invalid path' };
+        }
+        
+        // Check if directory exists
+        const stats = await fs.promises.stat(dirPath);
+        if (!stats.isDirectory()) {
+            return { success: false, error: 'Not a directory' };
+        }
+        
+        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        const result = entries.map(e => {
+            let mtime = 0, size = 0;
+            try {
+                const stat = fs.statSync(path.join(dirPath, e.name));
+                mtime = stat.mtimeMs;
+                size = stat.size;
+            } catch { }
+            return { name: e.name, isDir: e.isDirectory(), mtime, size };
+        });
+        return { success: true, data: result };
+    } catch (error) {
+        return { success: false, error: (error as Error).message };
+    }
 });
 
 // FS: read file
-ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
-    return fs.readFileSync(filePath, 'utf8');
+ipcMain.handle('fs:readFile', async (_event, filePath: string): Promise<IPCResponse<string>> => {
+    try {
+        // Validate path
+        if (!isValidFilePath(filePath)) {
+            return { success: false, error: 'Invalid path' };
+        }
+        
+        // Check file safety (size limit)
+        const safetyCheck = await isSafeToRead(filePath);
+        if (!safetyCheck.safe) {
+            return { success: false, error: safetyCheck.error };
+        }
+        
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        return { success: true, data: content };
+    } catch (error) {
+        return { success: false, error: (error as Error).message };
+    }
 });
 
 // Shell: run arbitrary command and get stdout/stderr
@@ -448,9 +502,12 @@ if (isWebMode) {
     // Normal Electron mode - also start web server for remote access
     app.whenReady().then(() => {
         console.log('[App] Ready, creating window...');
+        
+        // Setup Content Security Policy
+        setupCSP();
+        
         deployGlobalSkills();
         createWindow();
-        
         // Request folder access permissions for all workspaces
         if (process.platform === 'darwin') {
             const workspaces = loadWorkspaces();

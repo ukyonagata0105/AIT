@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { IMAGE_EXTENSIONS, PDF_EXTENSIONS, RESIZE_DEBOUNCE_DELAY } from './constants';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -749,7 +750,7 @@ window.addEventListener('resize', () => {
     if (resizeTimeout) clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
         refreshTerminal();
-    }, 100);
+    }, RESIZE_DEBOUNCE_DELAY);
 });
 
 ctxRename.addEventListener('click', async () => {
@@ -2402,18 +2403,17 @@ if (browserIsElectron && browserWebview) {
 
 // ─── Explorer File Type Routing ────────────────────────────────────────────────
 
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff']);
-const PDF_EXTS = new Set(['pdf']);
-
 function routeFileOpen(filePath: string) {
     const ext = filePath.split('.').pop()?.toLowerCase() || '';
-    if (PDF_EXTS.has(ext)) {
+    if (PDF_EXTENSIONS.has(ext)) {
         openPdfViewer(filePath);
-    } else if (IMAGE_EXTS.has(ext)) {
+    } else if (IMAGE_EXTENSIONS.has(ext)) {
         openImageViewer(filePath);
     }
     // Otherwise the existing text viewer in the explorer view handles it
 }
+
+// ─── Browser Panel IPC Handlers (for MCP) ───────────────────────────────────────
 
 // ─── Browser Panel IPC Handlers (for MCP) ───────────────────────────────────────
 
