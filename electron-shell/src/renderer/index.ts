@@ -57,7 +57,7 @@ let wsWatchPtyId: string | null = null;  // PTY ID when in watch mode
 
 function initWebSocket(): Promise<void> {
     return new Promise((resolve) => {
-        if (webSocket && wsReady) {
+        if (webSocket && wsReady && wsWatchPtyId) {
             resolve();
             return;
         }
@@ -69,10 +69,17 @@ function initWebSocket(): Promise<void> {
         console.log('[WebMode] Connecting to WebSocket:', wsUrl);
         webSocket = new WebSocket(wsUrl);
         
+        // Timeout for waiting 'attached' message
+        let attachedTimeout: ReturnType<typeof setTimeout> | null = null;
+        
         webSocket.onopen = () => {
             console.log('[WebMode] WebSocket connected');
             wsReady = true;
-            resolve();
+            // Wait for 'attached' message with timeout
+            attachedTimeout = setTimeout(() => {
+                console.log('[WebMode] No attached message received, proceeding anyway');
+                resolve();
+            }, 3000);
         };
         
         webSocket.onmessage = (event) => {
@@ -83,6 +90,14 @@ function initWebSocket(): Promise<void> {
                 if (msg.type === 'attached') {
                     wsWatchPtyId = msg.id;
                     console.log('[WebMode] Attached to existing PTY:', msg.id);
+                    // Set activePtyId so terminal data gets displayed
+                    activePtyId = msg.id;
+                    // Clear timeout and resolve
+                    if (attachedTimeout) {
+                        clearTimeout(attachedTimeout);
+                        attachedTimeout = null;
+                    }
+                    resolve();
                     // Emit a fake 'data' event to trigger terminal initialization with this PTY
                     wsMessageHandlers.forEach(handler => {
                         handler({ type: 'data', id: msg.id, data: '' });
@@ -98,6 +113,10 @@ function initWebSocket(): Promise<void> {
         webSocket.onclose = () => {
             console.log('[WebMode] WebSocket disconnected');
             wsReady = false;
+            if (attachedTimeout) {
+                clearTimeout(attachedTimeout);
+                attachedTimeout = null;
+            }
             // Try to reconnect after 2 seconds
             setTimeout(() => {
                 if (!isElectron) {
@@ -109,6 +128,10 @@ function initWebSocket(): Promise<void> {
         webSocket.onerror = (error) => {
             console.error('[WebMode] WebSocket error:', error);
             wsReady = false;
+            if (attachedTimeout) {
+                clearTimeout(attachedTimeout);
+                attachedTimeout = null;
+            }
             resolve(); // Resolve anyway to not block initialization
         };
     });
@@ -1327,14 +1350,22 @@ function createTerminalTab(cwd: string): TerminalTab {
         try {
             fitAddon.fit();
             const { cols, rows } = term;
-            api.ptyCreate({ id: ptyId, cwd, cols, rows });
+            // In web mode, don't create new PTY - we'll watch Electron's PTY
+            if (!isElectron && wsWatchPtyId) {
+                console.log('[WebMode] Using existing PTY:', wsWatchPtyId);
+                tab.ptyId = wsWatchPtyId;  // Use the watched PTY ID
+            } else {
+                api.ptyCreate({ id: ptyId, cwd, cols, rows });
+            }
         } catch (e) {
             console.error('Error creating PTY:', e);
         }
     });
 
+
     term.onData((data) => { 
-        if (activePtyId === ptyId) {
+        // In web mode, don't send input - we're just watching Electron's terminal
+        if (isElectron && activePtyId === ptyId) {
             api.ptyInput({ id: ptyId, data }); 
         }
     });
