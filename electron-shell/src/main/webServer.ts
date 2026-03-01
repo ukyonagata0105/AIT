@@ -118,33 +118,32 @@ export function startWebServer(port: number = 4096): void {
         console.log('[WebServer] Client connected');
         
         let currentPtyId: string | null = null;
-        let isWatcher = false;  // If true, just watching existing PTY
+        let isWatcher = false;
+        
+        // Get PTY manager
+        const pty = getPtyManager();
         
         // Auto-attach to existing PTY if any (for sharing with Electron)
-        const pty = getPtyManager();
         const existingSessions = pty.getSessionIds();
         if (existingSessions.length > 0) {
-            // Auto-watch the first existing PTY
             currentPtyId = existingSessions[0];
             isWatcher = true;
             console.log(`[WebServer] Auto-attaching to existing PTY: ${currentPtyId}`);
-            // Send initial data about the PTY to the client
             ws.send(JSON.stringify({ type: 'attached', id: currentPtyId }));
         }
         
         // Forward PTY data to client
         const dataHandler = (id: string, data: string) => {
-        const dataHandler = (id: string, data: string) => {
-            // Send data if this client is watching this PTY OR if it's the owner
             if (id === currentPtyId) {
                 ws.send(JSON.stringify({ type: 'data', id, data }));
             }
         };
         
+        const exitHandler = (id: string, exitCode: number) => {
+            if (id === currentPtyId) {
+                ws.send(JSON.stringify({ type: 'exit', id, exitCode }));
+            }
         };
-
-        pty.on('data', dataHandler);
-
         
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
@@ -155,14 +154,12 @@ export function startWebServer(port: number = 4096): void {
                 
                 switch (msg.type) {
                     case 'create':
-                        // Create new PTY (original behavior)
                         currentPtyId = msg.id;
                         isWatcher = false;
                         pty.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
                         break;
                         
                     case 'watch':
-                        // Watch existing PTY (new: attach to Electron's PTY)
                         currentPtyId = msg.id;
                         isWatcher = true;
                         console.log(`[WebServer] Client watching PTY: ${msg.id}`);
@@ -170,7 +167,6 @@ export function startWebServer(port: number = 4096): void {
                         
                     case 'input':
                         if (msg.id && !isWatcher) {
-                            // Only allow input if not in watcher mode
                             pty.write(msg.id, msg.data);
                         }
                         break;
@@ -196,7 +192,6 @@ export function startWebServer(port: number = 4096): void {
             console.log('[WebServer] Client disconnected');
             pty.off('data', dataHandler);
             pty.off('exit', exitHandler);
-            // Only kill PTY if we created it (not watching)
             if (currentPtyId && !isWatcher) {
                 pty.kill(currentPtyId);
             }

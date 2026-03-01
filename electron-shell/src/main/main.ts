@@ -243,12 +243,26 @@ ipcMain.handle('exec:run', async (_event, cmd: string) => {
     });
 });
 
+// Server: get status and IP address
+ipcMain.handle('server:getStatus', async () => {
+    return {
+        running: serverStatus.running,
+        port: webPort,
+        localIp: 'localhost',
+        networkIps: serverStatus.networkIps,
+        error: serverStatus.error
+    };
+});
 
 // Server: get status and IP address
-
-// Terminal: get active PTY ID (for web sharing)
-ipcMain.handle('pty:getActiveId', async () => {
-    return { activePtyId };
+ipcMain.handle('server:getStatus', async () => {
+    return {
+        running: serverStatus.running,
+        port: webPort,
+        localIp: 'localhost',
+        networkIps: serverStatus.networkIps,
+        error: serverStatus.error
+    };
 });
 
 // Shell: open file in system default application
