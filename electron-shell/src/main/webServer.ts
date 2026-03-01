@@ -4,7 +4,20 @@ import * as path from 'path';
 import * as os from 'os';
 import { PtyManager } from './ptyManager';
 
-const ptyManager = new PtyManager();
+// Default PTY manager - will be replaced with shared instance if set
+let sharedPtyManager: PtyManager | null = null;
+
+/**
+ * Set the shared PTY manager from main process.
+ * This allows web server to use the same PTY sessions as Electron window.
+ */
+export function setSharedPtyManager(pm: PtyManager): void {
+    sharedPtyManager = pm;
+}
+
+function getPtyManager(): PtyManager {
+    return sharedPtyManager || new PtyManager();
+}
 
 export function startWebServer(port: number = 4096): void {
     const app = express();
@@ -112,8 +125,10 @@ export function startWebServer(port: number = 4096): void {
             }
         };
         
-        ptyManager.on('data', dataHandler);
-        ptyManager.on('exit', exitHandler);
+        const pty = getPtyManager();
+        
+        pty.on('data', dataHandler);
+        pty.on('exit', exitHandler);
         
         ws.on('message', (message: string) => {
             try {
@@ -122,21 +137,21 @@ export function startWebServer(port: number = 4096): void {
                 switch (msg.type) {
                     case 'create':
                         currentPtyId = msg.id;
-                        ptyManager.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
+                        pty.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
                         break;
                     case 'input':
                         if (msg.id) {
-                            ptyManager.write(msg.id, msg.data);
+                            pty.write(msg.id, msg.data);
                         }
                         break;
                     case 'resize':
                         if (msg.id) {
-                            ptyManager.resize(msg.id, msg.cols, msg.rows);
+                            pty.resize(msg.id, msg.cols, msg.rows);
                         }
                         break;
                     case 'kill':
                         if (msg.id) {
-                            ptyManager.kill(msg.id);
+                            pty.kill(msg.id);
                         }
                         break;
                 }
@@ -147,10 +162,10 @@ export function startWebServer(port: number = 4096): void {
         
         ws.on('close', () => {
             console.log('[WebServer] Client disconnected');
-            ptyManager.off('data', dataHandler);
-            ptyManager.off('exit', exitHandler);
+            pty.off('data', dataHandler);
+            pty.off('exit', exitHandler);
             if (currentPtyId) {
-                ptyManager.kill(currentPtyId);
+                pty.kill(currentPtyId);
             }
         });
     });

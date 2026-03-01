@@ -7,7 +7,7 @@ import * as https from 'https';
 import { PtyManager } from './ptyManager';
 import { PlaywrightAltMcp } from './mcpServer';
 import { deploySkillsToWorkspace, deployGlobalSkills, markShutdown } from './skillsManager';
-import { startWebServer } from './webServer';
+import { startWebServer, setSharedPtyManager } from './webServer';
 const CONFIG_PATH = path.join(os.homedir(), '.ai-terminal-ide', 'workspaces.json');
 
 // Enable remote debugging for Playwright ALT integration
@@ -39,6 +39,9 @@ function saveWorkspaces(workspaces: WorkspaceConfig[]) {
 
 let mainWindow: BrowserWindow | null = null;
 const ptyManager = new PtyManager();
+
+// Export for web server to share PTY sessions
+export { ptyManager };
 
 // Server status tracking
 let serverStatus = {
@@ -437,6 +440,7 @@ if (isWebMode) {
         deployGlobalSkills();
         
         // Start web server
+        setSharedPtyManager(ptyManager);  // Share PTY with web server
         startWebServer(webPort);
         
         // Start Playwright ALT MCP Server
@@ -471,6 +475,7 @@ if (isWebMode) {
         try {
             serverStatus.running = true;
             serverStatus.networkIps = getNetworkIps();
+            setSharedPtyManager(ptyManager);  // Share PTY with web server
             startWebServer(webPort);
         } catch (e: any) {
             serverStatus.running = false;
