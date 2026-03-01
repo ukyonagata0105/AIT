@@ -52,7 +52,7 @@ const isElectron = typeof window.electronAPI !== 'undefined';
 
 let webSocket: WebSocket | null = null;
 let wsReady = false;
-let wsMessageHandlers: ((msg: any) => void)[] = [];
+const wsMessageHandlers = new Set<(msg: any) => void>();
 let wsWatchPtyId: string | null = null;  // PTY ID when in watch mode
 
 function initWebSocket(): Promise<void> {
@@ -61,17 +61,17 @@ function initWebSocket(): Promise<void> {
             resolve();
             return;
         }
-        
+
         // Determine WebSocket URL from current page URL
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}`;
-        
+
         console.log('[WebMode] Connecting to WebSocket:', wsUrl);
         webSocket = new WebSocket(wsUrl);
-        
+
         // Timeout for waiting 'attached' message
         let attachedTimeout: ReturnType<typeof setTimeout> | null = null;
-        
+
         webSocket.onopen = () => {
             console.log('[WebMode] WebSocket connected');
             wsReady = true;
@@ -81,11 +81,11 @@ function initWebSocket(): Promise<void> {
                 resolve();
             }, 3000);
         };
-        
+
         webSocket.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
-                
+
                 // Handle 'attached' message - web is now watching an existing PTY
                 if (msg.type === 'attached') {
                     wsWatchPtyId = msg.id;
@@ -98,21 +98,18 @@ function initWebSocket(): Promise<void> {
                         attachedTimeout = null;
                     }
                     resolve();
-                    // Emit a fake 'data' event to trigger terminal initialization with this PTY
-                    wsMessageHandlers.forEach(handler => {
-                        handler({ type: 'data', id: msg.id, data: '' });
-                    });
                 }
-                
+
                 wsMessageHandlers.forEach(handler => handler(msg));
             } catch (e) {
                 console.error('[WebMode] Error parsing WebSocket message:', e);
             }
         };
-        
+
         webSocket.onclose = () => {
             console.log('[WebMode] WebSocket disconnected');
             wsReady = false;
+            wsWatchPtyId = null; // Clear on disconnect
             if (attachedTimeout) {
                 clearTimeout(attachedTimeout);
                 attachedTimeout = null;
@@ -124,7 +121,7 @@ function initWebSocket(): Promise<void> {
                 }
             }, 2000);
         };
-        
+
         webSocket.onerror = (error) => {
             console.error('[WebMode] WebSocket error:', error);
             wsReady = false;
@@ -177,25 +174,22 @@ const api = {
     },
     ptyInput: (args: { id: string; data: string }) => {
         if (isElectron) window.electronAPI!.ptyInput(args);
-        // Web mode: send via WebSocket
-        wsSend({ type: 'input', id: args.id, data: args.data });
+        // Web mode: don't send input - we're just watching Electron's terminal
     },
     ptyResize: (args: { id: string; cols: number; rows: number }) => {
         if (isElectron) window.electronAPI!.ptyResize(args);
-        // Web mode: send via WebSocket
-        wsSend({ type: 'resize', id: args.id, cols: args.cols, rows: args.rows });
+        // Web mode: don't resize - we're just watching
     },
     ptyKill: (args: { id: string }) => {
         if (isElectron) window.electronAPI!.ptyKill(args);
-        // Web mode: send via WebSocket
-        wsSend({ type: 'kill', id: args.id });
+        // Web mode: don't kill - we're just watching
     },
     onPtyData: (cb: (a: { id: string; data: string }) => void) => {
         if (isElectron) {
             window.electronAPI!.onPtyData(cb);
         } else {
             // Web mode: register handler for WebSocket messages
-            wsMessageHandlers.push((msg) => {
+            wsMessageHandlers.add((msg) => {
                 if (msg.type === 'data') {
                     cb({ id: msg.id, data: msg.data });
                 }
@@ -207,7 +201,7 @@ const api = {
             window.electronAPI!.onPtyExit(cb);
         } else {
             // Web mode: register handler for WebSocket messages
-            wsMessageHandlers.push((msg) => {
+            wsMessageHandlers.add((msg) => {
                 if (msg.type === 'exit') {
                     cb({ id: msg.id, exitCode: msg.exitCode });
                 }
@@ -368,7 +362,7 @@ function updateAllTerminalFontSizes() {
             tab.term.options.fontSize = terminalLayoutSettings.fontSize;
         }
     });
-    
+
     // Update display
     const display = document.getElementById('font-size-display');
     if (display) {
@@ -500,10 +494,10 @@ setInterval(updateServerStatus, 30000); // Check every 30 seconds
 serverIpEl.addEventListener('click', async () => {
     const status = await api.serverGetStatus();
     if (!status.running) return;
-    
+
     const displayIp = status.networkIps.length > 0 ? status.networkIps[0] : status.localIp;
     const url = `http://${displayIp}:${status.port}`;
-    
+
     try {
         await navigator.clipboard.writeText(url);
         const originalText = serverIpEl.textContent;
@@ -556,13 +550,13 @@ function initTerminalLayoutSettings() {
         if ((input as HTMLInputElement).value === terminalLayoutSettings.mode) {
             (input as HTMLInputElement).checked = true;
         }
-        
+
         // Listen for changes
         input.addEventListener('change', () => {
             terminalLayoutSettings.mode = (input as HTMLInputElement).value as TerminalLayoutMode;
             saveTerminalLayoutSettings();
             updateTerminalGrid();
-            
+
             // Re-render grid with new layout
             const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
             tabs.forEach(tab => {
@@ -572,24 +566,24 @@ function initTerminalLayoutSettings() {
             });
         });
     });
-    
+
     // Font size controls
     const fontSizeDisplay = document.getElementById('font-size-display');
     if (fontSizeDisplay) {
         fontSizeDisplay.textContent = String(terminalLayoutSettings.fontSize);
     }
-    
+
     const decreaseBtn = document.getElementById('font-size-decrease');
     const increaseBtn = document.getElementById('font-size-increase');
-    
+
     if (decreaseBtn) {
         decreaseBtn.addEventListener('click', () => changeFontSize(-1));
     }
-    
+
     if (increaseBtn) {
         increaseBtn.addEventListener('click', () => changeFontSize(1));
     }
-    
+
     // Scrollback controls
     const scrollbackInputs = document.querySelectorAll('input[name="scrollback"]');
     scrollbackInputs.forEach(input => {
@@ -597,12 +591,12 @@ function initTerminalLayoutSettings() {
         if (parseInt((input as HTMLInputElement).value) === terminalLayoutSettings.scrollback) {
             (input as HTMLInputElement).checked = true;
         }
-        
+
         // Listen for changes
         input.addEventListener('change', () => {
             terminalLayoutSettings.scrollback = parseInt((input as HTMLInputElement).value);
             saveTerminalLayoutSettings();
-            
+
             // Update all existing terminals
             const allTabs = Array.from(workspaceTerminals.values()).flat();
             allTabs.forEach(tab => {
@@ -752,7 +746,7 @@ function renderWorkspaceBar() {
         });
         workspaceList.appendChild(item);
     }
-    
+
     // Add the + button at the end
     const addBtn = document.createElement('div');
     addBtn.id = 'workspace-add-btn';
@@ -957,10 +951,10 @@ async function switchWorkspace(wsId: string) {
     if (activeWorkspaceId) {
         const currentTabs = workspaceTerminals.get(activeWorkspaceId) || [];
         const currentActiveTab = currentTabs.find(t => t.id === activeTabId);
-        
+
         // Save active tab ID for this workspace
         workspaceActiveTabs.set(activeWorkspaceId, activeTabId);
-        
+
         // Detach terminal cells from DOM (keep PTY alive)
         currentTabs.forEach(tab => {
             if (tab.cell && tab.cell.parentElement) {
@@ -980,7 +974,7 @@ async function switchWorkspace(wsId: string) {
     // STEP 3: Get or create terminal tabs for this workspace
     try {
         let tabs = workspaceTerminals.get(wsId);
-        
+
         if (!tabs || tabs.length === 0) {
             tabs = [];
             workspaceTerminals.set(wsId, tabs);
@@ -990,16 +984,16 @@ async function switchWorkspace(wsId: string) {
 
         // Render tabs UI
         renderTerminalTabs();
-        
+
         // Render terminal grid (this attaches cells to DOM)
         renderTerminalGrid();
-        
+
         // Restore active tab
         const savedActiveTabId = workspaceActiveTabs.get(wsId);
-        const tabToActivate = savedActiveTabId 
-            ? tabs.find(t => t.id === savedActiveTabId) 
+        const tabToActivate = savedActiveTabId
+            ? tabs.find(t => t.id === savedActiveTabId)
             : tabs[0];
-        
+
         if (tabToActivate) {
             switchTerminalTab(tabToActivate.id);
         }
@@ -1020,13 +1014,13 @@ function updateTerminalGrid() {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     terminalPaneEl.setAttribute('data-count', String(tabs.length));
     terminalPaneEl.setAttribute('data-layout', terminalLayoutSettings.mode);
-    
+
     // Update settings UI radio button
     const layoutRadio = document.querySelector(`input[name="terminal-layout"][value="${terminalLayoutSettings.mode}"]`) as HTMLInputElement;
     if (layoutRadio) {
         layoutRadio.checked = true;
     }
-    
+
     // Apply custom ordering if exists
     const customOrder = terminalLayoutSettings.customLayouts[tabs.length];
     if (customOrder && customOrder.length === tabs.length) {
@@ -1041,7 +1035,7 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
     const cell = document.createElement('div');
     cell.className = 'terminal-cell';
     cell.dataset.tabId = tab.id;
-    
+
     // Header with drag handle
     const header = document.createElement('div');
     header.className = 'terminal-cell-header';
@@ -1050,11 +1044,11 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
         <span class="terminal-cell-title">${tab.title}</span>
         <button class="terminal-cell-close" title="Close">×</button>
     `;
-    
+
     // Content area
     const content = document.createElement('div');
     content.className = 'terminal-cell-content';
-    
+
     // Drop zones (invisible by default)
     const dropZones = document.createElement('div');
     dropZones.className = 'terminal-drop-zones';
@@ -1064,11 +1058,11 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
         <div class="drop-zone drop-top" data-position="top"></div>
         <div class="drop-zone drop-bottom" data-position="bottom"></div>
     `;
-    
+
     cell.appendChild(header);
     cell.appendChild(content);
     cell.appendChild(dropZones);
-    
+
     // Drag events
     header.addEventListener('dragstart', (e) => {
         cell.classList.add('dragging');
@@ -1078,7 +1072,7 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
             c.classList.add('show-drop-zones');
         });
     });
-    
+
     header.addEventListener('dragend', () => {
         cell.classList.remove('dragging');
         // Hide drop zones
@@ -1086,7 +1080,7 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
             c.classList.remove('show-drop-zones');
         });
     });
-    
+
     // Drop zone events
     dropZones.querySelectorAll('.drop-zone').forEach(zone => {
         zone.addEventListener('dragover', (e) => {
@@ -1094,35 +1088,35 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
             e.stopPropagation();
             (zone as HTMLElement).classList.add('active');
         });
-        
+
         zone.addEventListener('dragleave', () => {
             (zone as HTMLElement).classList.remove('active');
         });
-        
+
         zone.addEventListener('drop', (e) => {
             e.preventDefault();
             e.stopPropagation();
             (zone as HTMLElement).classList.remove('active');
-            
+
             const draggedId = e.dataTransfer?.getData('text/plain');
             const position = (zone as HTMLElement).dataset.position;
-            
+
             if (draggedId && draggedId !== tab.id && position) {
                 insertTerminalAt(draggedId, tab.id, position);
             }
         });
     });
-    
+
     // Legacy drop on cell (swap)
     cell.addEventListener('dragover', (e) => {
         e.preventDefault();
         cell.classList.add('drag-over');
     });
-    
+
     cell.addEventListener('dragleave', () => {
         cell.classList.remove('drag-over');
     });
-    
+
     cell.addEventListener('drop', (e) => {
         e.preventDefault();
         cell.classList.remove('drag-over');
@@ -1131,18 +1125,18 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
             swapTerminals(draggedId, tab.id);
         }
     });
-    
+
     // Close button
     header.querySelector('.terminal-cell-close')?.addEventListener('click', (e) => {
         e.stopPropagation();
         closeTerminalTab(tab.id);
     });
-    
+
     // Click to activate
     cell.addEventListener('click', () => {
         switchTerminalTab(tab.id);
     });
-    
+
     return cell;
 }
 
@@ -1151,16 +1145,16 @@ function swapTerminals(id1: string, id2: string) {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     const idx1 = tabs.findIndex(t => t.id === id1);
     const idx2 = tabs.findIndex(t => t.id === id2);
-    
+
     if (idx1 === -1 || idx2 === -1) return;
-    
+
     // Swap in array
     [tabs[idx1], tabs[idx2]] = [tabs[idx2], tabs[idx1]];
     workspaceTerminals.set(activeWorkspaceId!, tabs);
-    
+
     // Save custom layout
     saveCustomLayout(tabs);
-    
+
     // Re-render grid
     renderTerminalGrid();
 }
@@ -1170,16 +1164,16 @@ function insertTerminalAt(draggedId: string, targetId: string, position: string)
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     const draggedIdx = tabs.findIndex(t => t.id === draggedId);
     const targetIdx = tabs.findIndex(t => t.id === targetId);
-    
+
     if (draggedIdx === -1 || targetIdx === -1) return;
-    
+
     // Remove dragged from current position
     const [dragged] = tabs.splice(draggedIdx, 1);
-    
+
     // Calculate new index based on position
     let newIdx = targetIdx;
     if (draggedIdx < targetIdx) newIdx--; // Adjust for removal
-    
+
     switch (position) {
         case 'left':
         case 'top':
@@ -1191,11 +1185,11 @@ function insertTerminalAt(draggedId: string, targetId: string, position: string)
             newIdx++;
             break;
     }
-    
+
     // Insert at new position
     tabs.splice(newIdx, 0, dragged);
     workspaceTerminals.set(activeWorkspaceId!, tabs);
-    
+
     // Update layout mode based on drop position
     if (position === 'left' || position === 'right') {
         terminalLayoutSettings.mode = 'horizontal';
@@ -1203,10 +1197,10 @@ function insertTerminalAt(draggedId: string, targetId: string, position: string)
         terminalLayoutSettings.mode = 'vertical';
     }
     saveTerminalLayoutSettings();
-    
+
     // Save custom layout
     saveCustomLayout(tabs);
-    
+
     // Re-render grid
     renderTerminalGrid();
 }
@@ -1221,7 +1215,7 @@ function saveCustomLayout(tabs: TerminalTab[]) {
 function renderTerminalGrid() {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     terminalPaneEl.innerHTML = '';
-    
+
     tabs.forEach(tab => {
         if (!tab.cell) {
             tab.cell = createTerminalCell(tab);
@@ -1233,9 +1227,9 @@ function renderTerminalGrid() {
         }
         terminalPaneEl.appendChild(tab.cell);
     });
-    
+
     updateTerminalGrid();
-    
+
     // Mark active cell
     tabs.forEach(tab => {
         if (tab.cell) {
@@ -1247,7 +1241,7 @@ function renderTerminalGrid() {
 function renderTerminalTabs() {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     terminalTabsEl.innerHTML = '';
-    
+
     tabs.forEach(tab => {
         const tabEl = document.createElement('button');
         tabEl.className = `terminal-tab ${tab.id === activeTabId ? 'active' : ''}`;
@@ -1255,7 +1249,7 @@ function renderTerminalTabs() {
             <span class="terminal-tab-title">${tab.title}</span>
             <span class="terminal-tab-close" data-tab-id="${tab.id}">×</span>
         `;
-        
+
         tabEl.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('terminal-tab-close')) {
@@ -1264,7 +1258,7 @@ function renderTerminalTabs() {
                 switchTerminalTab(tab.id);
             }
         });
-        
+
         terminalTabsEl.appendChild(tabEl);
     });
 }
@@ -1272,36 +1266,36 @@ function renderTerminalTabs() {
 function switchTerminalTab(tabId: string) {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     const tab = tabs.find(t => t.id === tabId);
-    
+
     if (!tab) return;
-    
+
     // Update active cell classes
     tabs.forEach(t => {
         if (t.cell) {
             t.cell.classList.toggle('active', t.id === tabId);
         }
     });
-    
+
     // Update active references
     activeTabId = tabId;
     activeTerm = tab.term;
     activeFitAddon = tab.fitAddon;
     activePtyId = tab.ptyId;
-    
+
     // Resize to fit
     requestAnimationFrame(() => {
         try {
             activeFitAddon!.fit();
-            api.ptyResize({ 
-                id: activePtyId!, 
-                cols: activeTerm!.cols, 
-                rows: activeTerm!.rows 
+            api.ptyResize({
+                id: activePtyId!,
+                cols: activeTerm!.cols,
+                rows: activeTerm!.rows
             });
         } catch (e) {
             console.error('Error resizing terminal:', e);
         }
     });
-    
+
     try {
         activeTerm.focus();
     } catch (e) {
@@ -1313,7 +1307,7 @@ function switchTerminalTab(tabId: string) {
 function createTerminalTab(cwd: string): TerminalTab {
     const tabId = generateTabId();
     const ptyId = `pty-${activeWorkspaceId}-${tabId}`;
-    
+
     const term = new Terminal({
         fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
         fontSize: terminalLayoutSettings.fontSize, lineHeight: 1.2, cursorBlink: true,
@@ -1324,7 +1318,7 @@ function createTerminalTab(cwd: string): TerminalTab {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
-    
+
     // Create container for this terminal
     const container = document.createElement('div');
     container.style.cssText = 'position:absolute;inset:0;';
@@ -1363,56 +1357,56 @@ function createTerminalTab(cwd: string): TerminalTab {
     });
 
 
-    term.onData((data) => { 
+    term.onData((data) => {
         // In web mode, don't send input - we're just watching Electron's terminal
         if (isElectron && activePtyId === ptyId) {
-            api.ptyInput({ id: ptyId, data }); 
+            api.ptyInput({ id: ptyId, data });
         }
     });
 
     // Render grid and switch to new tab
     renderTerminalGrid();
     switchTerminalTab(tabId);
-    
+
     return tab;
 }
 
 function closeTerminalTab(tabId: string) {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
-    
+
     if (tabs.length <= 1) {
         // Don't close last tab, reset instead
         resetCurrentTerminal();
         return;
     }
-    
+
     const tabIndex = tabs.findIndex(t => t.id === tabId);
     if (tabIndex === -1) return;
-    
+
     const tab = tabs[tabIndex];
-    
+
     // Kill PTY
     api.ptyKill({ id: tab.ptyId });
-    
+
     // Dispose terminal and remove cell
     tab.term.dispose();
     if (tab.cell && tab.cell.parentElement) {
         tab.cell.parentElement.removeChild(tab.cell);
     }
-    
+
     // Remove from array
     tabs.splice(tabIndex, 1);
     workspaceTerminals.set(activeWorkspaceId!, tabs);
-    
+
     // Re-render grid
     renderTerminalGrid();
-    
+
     // If closing active tab, switch to another
     if (tabId === activeTabId && tabs.length > 0) {
         const newActiveTab = tabs[Math.min(tabIndex, tabs.length - 1)];
         switchTerminalTab(newActiveTab.id);
     }
-    
+
     renderTerminalTabs();
 }
 
@@ -1421,30 +1415,30 @@ terminalAddBtn.addEventListener('click', () => {
     if (!activeWorkspaceId) return;
     const ws = workspaces.find(w => w.id === activeWorkspaceId);
     if (!ws) return;
-    
+
     createTerminalTab(ws.path);
 });
 
 function resetCurrentTerminal() {
     if (!activeWorkspaceId || !activeTabId) return;
-    
+
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     const tabIndex = tabs.findIndex(t => t.id === activeTabId);
     if (tabIndex === -1) return;
-    
+
     const tab = tabs[tabIndex];
     const ws = workspaces.find(w => w.id === activeWorkspaceId);
     if (!ws) return;
-    
+
     // Kill existing PTY
     api.ptyKill({ id: tab.ptyId });
-    
+
     // Dispose old terminal and remove old container
     tab.term.dispose();
     if (tab.container && tab.container.parentElement) {
         tab.container.parentElement.removeChild(tab.container);
     }
-    
+
     // Create new terminal for this tab
     const term = new Terminal({
         fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
@@ -1456,7 +1450,7 @@ function resetCurrentTerminal() {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
-    
+
     // Create new container
     const container = document.createElement('div');
     container.style.cssText = 'position:absolute;inset:0;';
@@ -1464,14 +1458,14 @@ function resetCurrentTerminal() {
     term.open(container);
 
     const newPtyId = `pty-${activeWorkspaceId}-${activeTabId}-${Date.now()}`;
-    
+
     // Update tab
     tab.term = term;
     tab.fitAddon = fitAddon;
     tab.ptyId = newPtyId;
     tab.title = 'Terminal';
     tab.container = container;
-    
+
     // Update active references
     activeTerm = term;
     activeFitAddon = fitAddon;
@@ -1482,14 +1476,14 @@ function resetCurrentTerminal() {
         const { cols, rows } = term;
         api.ptyCreate({ id: newPtyId, cwd: ws.path, cols, rows });
     });
-    
-    term.onData((data) => { 
+
+    term.onData((data) => {
         if (activePtyId === newPtyId) {
-            api.ptyInput({ id: newPtyId, data }); 
+            api.ptyInput({ id: newPtyId, data });
         }
     });
     term.focus();
-    
+
     renderTerminalTabs();
 }
 
@@ -1542,7 +1536,7 @@ function updateExplorerSelection() {
     explorerItems.forEach((item, index) => {
         item.classList.toggle('selected', index === selectedExplorerIndex);
     });
-    
+
     // Scroll into view if needed
     if (selectedExplorerIndex >= 0 && explorerItems[selectedExplorerIndex]) {
         explorerItems[selectedExplorerIndex].scrollIntoView({ block: 'nearest' });
@@ -1552,7 +1546,7 @@ function updateExplorerSelection() {
 // Keyboard navigation handler
 explorerTree.addEventListener('keydown', (e) => {
     updateExplorerItems();
-    
+
     switch (e.key) {
         case 'ArrowDown':
             e.preventDefault();
@@ -1561,7 +1555,7 @@ explorerTree.addEventListener('keydown', (e) => {
                 updateExplorerSelection();
             }
             break;
-            
+
         case 'ArrowUp':
             e.preventDefault();
             if (selectedExplorerIndex > 0) {
@@ -1572,14 +1566,14 @@ explorerTree.addEventListener('keydown', (e) => {
                 updateExplorerSelection();
             }
             break;
-            
+
         case 'Enter':
             e.preventDefault();
             if (selectedExplorerIndex >= 0 && explorerItems[selectedExplorerIndex]) {
                 explorerItems[selectedExplorerIndex].click();
             }
             break;
-            
+
         case 'Backspace':
             e.preventDefault();
             // Go up one directory
@@ -1625,10 +1619,10 @@ async function loadExplorer(dirPath: string, label?: string) {
 // Update breadcrumb navigation
 function updateBreadcrumb(dirPath: string) {
     explorerBreadcrumb.innerHTML = '';
-    
+
     // Split path into segments
     const parts = dirPath.split('/').filter(p => p);
-    
+
     // Add root/home icon
     const rootItem = document.createElement('span');
     rootItem.className = 'breadcrumb-item';
@@ -1636,30 +1630,30 @@ function updateBreadcrumb(dirPath: string) {
     rootItem.title = '/';
     rootItem.addEventListener('click', () => loadExplorer('/', 'Root'));
     explorerBreadcrumb.appendChild(rootItem);
-    
+
     // Build path progressively
     let accumulatedPath = '';
     parts.forEach((part, index) => {
         accumulatedPath += '/' + part;
         const currentPath = accumulatedPath;
-        
+
         // Separator
         const sep = document.createElement('span');
         sep.className = 'breadcrumb-separator';
         sep.textContent = '›';
         explorerBreadcrumb.appendChild(sep);
-        
+
         // Path item
         const item = document.createElement('span');
         item.className = 'breadcrumb-item' + (index === parts.length - 1 ? ' active' : '');
         item.textContent = part;
         item.title = currentPath;
-        
+
         // Click to navigate
         if (index < parts.length - 1) {
             item.addEventListener('click', () => loadExplorer(currentPath, part));
         }
-        
+
         explorerBreadcrumb.appendChild(item);
     });
 }
@@ -1704,7 +1698,7 @@ async function renderDir(dirPath: string, container: HTMLElement, depth: number)
         if (explorerSort.key === 'type' && depth === 0) {
             // Type grouping (hamburger menu style)
             const groups = groupEntriesByType(entries);
-            
+
             for (const [typeLabel, typeEntries] of groups) {
                 // Create collapsible group header
                 const groupHeader = document.createElement('div');
@@ -1715,18 +1709,18 @@ async function renderDir(dirPath: string, container: HTMLElement, depth: number)
                     <span class="group-count">(${typeEntries.length})</span>
                 `;
                 container.appendChild(groupHeader);
-                
+
                 // Create group content container
                 const groupContent = document.createElement('div');
                 groupContent.className = 'tree-group-content';
-                
+
                 // Render entries in this group
                 for (const entry of typeEntries) {
                     renderEntry(entry, dirPath, groupContent, depth);
                 }
-                
+
                 container.appendChild(groupContent);
-                
+
                 // Toggle group visibility on click
                 groupHeader.addEventListener('click', () => {
                     const icon = groupHeader.querySelector('.group-icon')!;
@@ -1798,16 +1792,16 @@ function renderEntry(entry: { name: string; isDir: boolean; mtime: number; size:
     } else {
         item.addEventListener('click', () => openFile(fullPath, item));
     }
-    
+
     // Right-click context menu
     item.addEventListener('contextmenu', async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Use HTML context menu (works in both Electron and web mode)
         showExplorerContextMenu(fullPath, entry.isDir, e.clientX, e.clientY);
     });
-    
+
     container.appendChild(item);
 }
 
@@ -1819,12 +1813,12 @@ let currentContextIsDir = false;
 function showExplorerContextMenu(filePath: string, isDir: boolean, x: number, y: number) {
     currentContextPath = filePath;
     currentContextIsDir = isDir;
-    
+
     // Position and show menu
     explorerCtxMenu.style.left = `${x}px`;
     explorerCtxMenu.style.top = `${y}px`;
     explorerCtxMenu.classList.remove('hidden');
-    
+
     // Adjust position if menu would go off screen
     requestAnimationFrame(() => {
         const rect = explorerCtxMenu.getBoundingClientRect();
@@ -1880,12 +1874,12 @@ ctxOpenExternal.addEventListener('click', async () => {
 // Get relative path from workspace root
 function getRelativePath(absolutePath: string): string {
     if (!activeWorkspaceId) return absolutePath;
-    
+
     const ws = workspaces.find(w => w.id === activeWorkspaceId);
     if (!ws || !ws.path) return absolutePath;
-    
+
     const workspacePath = ws.path;
-    
+
     // Check if path starts with workspace path
     if (absolutePath.startsWith(workspacePath)) {
         let relative = absolutePath.slice(workspacePath.length);
@@ -1895,7 +1889,7 @@ function getRelativePath(absolutePath: string): string {
         }
         return relative || '.';
     }
-    
+
     return absolutePath;
 }
 
@@ -1913,9 +1907,9 @@ function getFileIcon(name: string): string {
 // Get file type label for grouping
 function getFileTypeLabel(entry: { name: string; isDir: boolean }): string {
     if (entry.isDir) return 'Folders';
-    
+
     const ext = entry.name.split('.').pop()?.toLowerCase() || '';
-    
+
     // Type groups with labels and icons
     const typeGroups: Record<string, { label: string; extensions: Set<string> }> = {
         'TypeScript': { label: 'TypeScript', extensions: new Set(['ts', 'tsx']) },
@@ -1932,13 +1926,13 @@ function getFileTypeLabel(entry: { name: string; isDir: boolean }): string {
         'Archives': { label: 'Archives', extensions: new Set(['zip', 'tar', 'gz', 'rar', '7z', 'bz2']) },
         'Shell': { label: 'Shell', extensions: new Set(['sh', 'bash', 'zsh', 'fish']) },
     };
-    
+
     for (const [_, group] of Object.entries(typeGroups)) {
         if (group.extensions.has(ext)) {
             return group.label;
         }
     }
-    
+
     // If has extension but not in groups
     if (ext) return `${ext.toUpperCase()} Files`;
     return 'Other';
@@ -1947,15 +1941,15 @@ function getFileTypeLabel(entry: { name: string; isDir: boolean }): string {
 // Group entries by type for hamburger menu style display
 function groupEntriesByType(entries: { name: string; isDir: boolean; mtime: number; size: number }[]): Map<string, typeof entries> {
     const groups = new Map<string, typeof entries>();
-    
+
     // First, separate folders
     const folders = entries.filter(e => e.isDir);
     const files = entries.filter(e => !e.isDir);
-    
+
     if (folders.length > 0) {
         groups.set('Folders', folders.sort((a, b) => a.name.localeCompare(b.name)));
     }
-    
+
     // Group files by type
     const fileGroups = new Map<string, typeof entries>();
     for (const file of files) {
@@ -1965,7 +1959,7 @@ function groupEntriesByType(entries: { name: string; isDir: boolean; mtime: numb
         }
         fileGroups.get(typeLabel)!.push(file);
     }
-    
+
     // Sort files within each group and add to main groups map
     const sortedTypes = Array.from(fileGroups.keys()).sort();
     for (const type of sortedTypes) {
@@ -1973,7 +1967,7 @@ function groupEntriesByType(entries: { name: string; isDir: boolean; mtime: numb
         files.sort((a, b) => a.name.localeCompare(b.name));
         groups.set(type, files);
     }
-    
+
     return groups;
 }
 
@@ -2013,7 +2007,7 @@ async function openFile(filePath: string, itemEl: HTMLElement) {
     }
 }
 
-api.onPtyData(({ id, data }) => { 
+api.onPtyData(({ id, data }) => {
     // In web mode, also accept data from watched PTY
     if (id === activePtyId || (!isElectron && id === wsWatchPtyId)) {
         activeTerm?.write(data);
@@ -2030,7 +2024,7 @@ api.onPtyExit(({ id, exitCode }) => {
 let rafId: number | null = null;
 function scheduleResize(updateFn: () => void) {
     if (rafId !== null) return; // Skip if already scheduled
-    
+
     rafId = requestAnimationFrame(() => {
         updateFn();
         rafId = null;
@@ -2042,7 +2036,7 @@ function setupColSash(sashId: string, targetEl: HTMLElement, min: number, max: n
     let dragging = false;
     let dragOffset = 0; // track offset within sash where click occurred
     let startX = 0; // Store initial mouse X position to detect actual drag
-    
+
     sash.addEventListener('mousedown', (e) => {
         dragging = true;
         document.body.style.cursor = 'col-resize';
@@ -2051,15 +2045,15 @@ function setupColSash(sashId: string, targetEl: HTMLElement, min: number, max: n
         startX = e.clientX; // Store initial X for drag detection
         e.preventDefault();
     });
-    
+
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
         e.preventDefault(); // Prevent text selection during drag
-        
+
         // Only resize if mouse moved more than 3 pixels (distinguish click from drag)
         const deltaX = Math.abs(e.clientX - startX);
         if (deltaX < 3) return; // Ignore tiny movements
-        
+
         scheduleResize(() => {
             const rect = targetEl.parentElement!.getBoundingClientRect();
             // Anchor to where user clicked on the sash, so boundary follows cursor exactly
@@ -2067,7 +2061,7 @@ function setupColSash(sashId: string, targetEl: HTMLElement, min: number, max: n
             targetEl.style.width = `${val}px`;
         });
     });
-    
+
     window.addEventListener('mouseup', () => {
         if (dragging) {
             dragging = false;
@@ -2084,7 +2078,7 @@ function setupFlexColSash(sashId: string, targetEl: HTMLElement, min: number, ma
     let dragStarted = false; // Track if we've actually started dragging
     let startX = 0;
     let initialWidth = 0; // Cache the current width at drag start
-    
+
     sash.addEventListener('mousedown', (e) => {
         dragging = true;
         dragStarted = false;
@@ -2096,20 +2090,20 @@ function setupFlexColSash(sashId: string, targetEl: HTMLElement, min: number, ma
         document.body.style.cursor = 'col-resize';
         e.preventDefault();
     });
-    
+
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        
+
         const deltaX = e.clientX - startX;
-        
+
         // Require 3px movement AND don't resize until we've crossed threshold
         if (!dragStarted && Math.abs(deltaX) < 3) {
             return;
         }
-        
+
         dragStarted = true;
         e.preventDefault();
-        
+
         requestAnimationFrame(() => {
             const newWidth = initialWidth + deltaX;
             const val = Math.min(Math.max(newWidth, min), max);
@@ -2120,7 +2114,7 @@ function setupFlexColSash(sashId: string, targetEl: HTMLElement, min: number, ma
             targetEl.style.width = `${val}px`;
         });
     });
-    
+
     window.addEventListener('mouseup', () => {
         if (dragging) {
             dragging = false;
@@ -2135,29 +2129,29 @@ function setupRowSash(sashId: string, targetEl: HTMLElement, min: number, max: n
     const sash = document.getElementById(sashId)!;
     let dragging = false;
     let startY = 0; // Store initial mouse Y position to detect actual drag
-    
+
     sash.addEventListener('mousedown', (e) => {
         dragging = true;
         document.body.style.cursor = 'row-resize';
         startY = e.clientY; // Store initial Y for drag detection
         e.preventDefault();
     });
-    
+
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
         e.preventDefault(); // Prevent text selection during drag
-        
+
         // Only resize if mouse moved more than 3 pixels (distinguish click from drag)
         const deltaY = Math.abs(e.clientY - startY);
         if (deltaY < 3) return; // Ignore tiny movements
-        
+
         scheduleResize(() => {
             const rect = targetEl.parentElement!.getBoundingClientRect();
             const val = Math.min(Math.max(e.clientY - rect.top, min), max);
             targetEl.style.flexBasis = `${val}px`;
         });
     });
-    
+
     window.addEventListener('mouseup', () => {
         if (dragging) {
             dragging = false;
@@ -2289,28 +2283,28 @@ document.getElementById('browser-zoom-reset')?.addEventListener('click', () => {
 });
 function openBrowserPanel(url?: string) {
     switchRightView('browser');
-    
+
     // Force layout recalculation before loading URL
     // This ensures the container has proper dimensions
     if (browserContent) {
         const rect = browserContent.getBoundingClientRect();
         console.log('[Browser] Container size:', rect.width, 'x', rect.height);
-        
+
         // If container has no size, wait for layout
         if (rect.width === 0 || rect.height === 0) {
             console.warn('[Browser] Container has zero size, may cause layout issues');
         }
     }
-    
+
     const target = url || browserUrlBar?.value || 'https://google.com';
     const normalizedUrl = target.startsWith('http') ? target : `https://${target}`;
-    
+
     if (browserIsElectron && browserWebview) {
         browserWebview.src = normalizedUrl;
     } else if (browserIframe) {
         browserIframe.src = normalizedUrl;
     }
-    
+
     if (browserUrlBar) {
         browserUrlBar.value = normalizedUrl;
     }
@@ -2335,7 +2329,7 @@ if (browserIsElectron && browserWebview) {
     document.getElementById('browser-devtools')?.addEventListener('click', () => {
         browserWebview.openDevTools();
     });
-    
+
     // Sync URL bar with navigation
     browserWebview.addEventListener('did-navigate', (e: Event) => {
         const nav = e as any;
@@ -2345,7 +2339,7 @@ if (browserIsElectron && browserWebview) {
         const nav = e as any;
         if (browserUrlBar && nav.url) browserUrlBar.value = nav.url;
     });
-    
+
     // Log webview events for debugging
     browserWebview.addEventListener('did-start-loading', () => {
         console.log('[Browser] Started loading:', browserWebview.src);
@@ -2363,10 +2357,10 @@ if (browserIsElectron && browserWebview) {
             browserIframe.src = browserUrlBar.value;
         }
     });
-    
+
     // Hide devtools button in web mode (not available)
     document.getElementById('browser-devtools')?.setAttribute('style', 'display:none;');
-    
+
     // Hide back/fwd in web mode (iframe doesn't support history)
     document.getElementById('browser-back')?.setAttribute('style', 'display:none;');
     document.getElementById('browser-fwd')?.setAttribute('style', 'display:none;');
@@ -2467,24 +2461,24 @@ if (browserIsElectron && (window as any).electronAPI) {
 async function init() {
     // Load terminal layout settings
     loadTerminalLayoutSettings();
-    
+
     // CRITICAL FIX: Wait for WebSocket in web mode before creating terminals
     if (!isElectron) {
         await initWebSocket();
     }
     // Load terminal layout settings
     loadTerminalLayoutSettings();
-    
+
     applyTheme(currentTheme);
-    
+
     // CRITICAL FIX: Show empty state during loading to prevent flicker
     emptyState.classList.remove('hidden');
     workspaceHeading.textContent = '';
-    
+
     try {
         workspaces = await api.workspacesLoad();
         renderWorkspaceBar();
-        
+
         if (workspaces.length > 0) {
             // Switch to first workspace - this will hide empty state
             await switchWorkspace(workspaces[0].id);

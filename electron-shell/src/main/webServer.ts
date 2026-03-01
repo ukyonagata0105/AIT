@@ -18,11 +18,11 @@ function getPtyManager(): PtyManager {
 export function startWebServer(port: number = 4096): void {
     const app = express();
     const server = http.createServer(app);
-    
+
     // Serve static files from dist/renderer
     const rendererPath = path.join(__dirname, '..', 'renderer');
     app.use(express.static(rendererPath));
-    
+
     // API endpoint to get workspaces
     app.get('/api/workspaces', (req, res) => {
         const configPath = path.join(os.homedir(), '.ai-terminal-ide', 'workspaces.json');
@@ -100,51 +100,53 @@ export function startWebServer(port: number = 4096): void {
         const activeIds = pty.getSessionIds();
         res.json({ sessions: activeIds });
     });
-    
+
     // SPA fallback - serve index.html for all routes
     app.use((req, res) => {
         res.sendFile(path.join(rendererPath, 'index.html'));
     });
-    
+
     // WebSocket for PTY communication
     const WebSocket = require('ws');
     const wss = new WebSocket.Server({ server });
-    
+
     wss.on('connection', (ws: any) => {
         console.log('[WebServer] Client connected');
-        
+
         let currentPtyId: string | null = null;
-        
+        let isSharedSession = false;
+
         // Forward PTY data to client
         const dataHandler = (id: string, data: string) => {
             if (id === currentPtyId) {
                 ws.send(JSON.stringify({ type: 'data', id, data }));
             }
         };
-        
+
         const exitHandler = (id: string, exitCode: number) => {
             if (id === currentPtyId) {
                 ws.send(JSON.stringify({ type: 'exit', id, exitCode }));
             }
         };
-        
+
         const pty = getPtyManager();
-        
+
         // Auto-attach to existing PTY if any (for sharing with Electron)
         const existingSessions = pty.getSessionIds();
         if (existingSessions.length > 0) {
             currentPtyId = existingSessions[0];
-            console.log(`[WebServer] Auto-attaching to existing PTY: ${currentPtyId}`);
+            isSharedSession = true;
+            console.log(`[WebServer] Auto-attaching to existing shared PTY: ${currentPtyId}`);
             ws.send(JSON.stringify({ type: 'attached', id: currentPtyId }));
         }
-        
+
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
-        
+
         ws.on('message', (message: string) => {
             try {
                 const msg = JSON.parse(message);
-                
+
                 switch (msg.type) {
                     case 'create':
                         currentPtyId = msg.id;
@@ -153,7 +155,8 @@ export function startWebServer(port: number = 4096): void {
                     case 'watch':
                         // Watch existing PTY (attach to Electron's PTY)
                         currentPtyId = msg.id;
-                        console.log(`[WebServer] Client watching PTY: ${msg.id}`);
+                        isSharedSession = true;
+                        console.log(`[WebServer] Client watching shared PTY: ${msg.id}`);
                         break;
                     case 'input':
                         if (msg.id) {
@@ -175,21 +178,24 @@ export function startWebServer(port: number = 4096): void {
                 console.error('[WebServer] Error processing message:', e);
             }
         });
-        
+
         ws.on('close', () => {
             console.log('[WebServer] Client disconnected');
             pty.off('data', dataHandler);
             pty.off('exit', exitHandler);
-            if (currentPtyId) {
+            if (currentPtyId && !isSharedSession) {
+                console.log(`[WebServer] Killing web-created PTY: ${currentPtyId}`);
                 pty.kill(currentPtyId);
+            } else if (currentPtyId && isSharedSession) {
+                console.log(`[WebServer] Client detached from shared PTY: ${currentPtyId} (keeping PTY alive)`);
             }
         });
     });
-    
+
     server.listen(port, '0.0.0.0', () => {
         const networkInterfaces = os.networkInterfaces();
         const addresses: string[] = [];
-        
+
         Object.values(networkInterfaces).forEach((interfaces) => {
             interfaces?.forEach((iface) => {
                 if (iface.family === 'IPv4' && !iface.internal) {
@@ -197,7 +203,7 @@ export function startWebServer(port: number = 4096): void {
                 }
             });
         });
-        
+
         console.log(`\n[WebServer] 🚀 AI Terminal IDE Web Server running!`);
         console.log(`[WebServer] Local:   http://localhost:${port}`);
         addresses.forEach(addr => {
