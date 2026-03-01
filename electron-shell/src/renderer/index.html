@@ -57,7 +57,6 @@
     <div id="vertical-sash"></div>
 
     <!-- Right panel -->
-    <!-- Right panel -->
     <div id="right-panel">
 
       <!-- ── Viewer Section (top-right 3/4) ── -->
@@ -110,16 +109,31 @@
               <button class="toolbar-btn" id="browser-fwd" title="Forward">→</button>
               <button class="toolbar-btn" id="browser-reload" title="Reload">↻</button>
             </div>
-            <input type="text" id="browser-url-bar" class="browser-url-input" placeholder="https://localhost:3000"
+            <input type="text" id="browser-url-bar" class="browser-url-input" placeholder="https://google.com"
+              spellcheck="false" />
+            <div class="browser-zoom">
+              <button class="toolbar-btn" id="browser-zoom-out" title="Zoom Out">−</button>
+              <button class="toolbar-btn" id="browser-zoom-reset" title="Reset Zoom (50%)">50%</button>
+              <button class="toolbar-btn" id="browser-zoom-in" title="Zoom In">+</button>
+            </div>
+            <div class="browser-actions">
+              <button class="toolbar-btn" id="browser-devtools" title="Dev Tools">🔧</button>
+            </div>
+            <input type="text" id="browser-url-bar" class="browser-url-input" placeholder="https://google.com"
               spellcheck="false" />
             <div class="browser-actions">
               <button class="toolbar-btn" id="browser-devtools" title="Dev Tools">🔧</button>
             </div>
           </div>
-          <webview id="browser-webview" src="about:blank" style="flex: 1; border: none; width: 100%;" allowpopups>
-          </webview>
+          <!-- Browser content container -->
+          <div class="browser-content">
+            <!-- Electron: uses webview -->
+            <webview id="browser-webview" src="about:blank" allowpopups></webview>
+            <!-- Web mode: uses iframe -->
+            <iframe id="browser-iframe" src="about:blank" sandbox="allow-scripts allow-modals allow-forms allow-popups allow-same-origin" style="display:none;"></iframe>
+          </div>
         </div>
-      </div>
+      </div><!-- /viewer-section -->
 
       <div id="horizontal-sash"></div>
 
@@ -143,7 +157,8 @@
         <div id="explorer-tree"></div>
       </div>
 
-    </div>
+    </div><!-- /right-panel -->
+    
     <!-- Right Activity Bar -->
     <div id="right-activity-bar">
       <div class="activity-btn active" data-view="viewer" title="File Viewer">📄</div>
@@ -151,7 +166,7 @@
       <div class="activity-btn" data-view="image" title="Image Viewer">🖼️</div>
       <div class="activity-btn" data-view="browser" title="Browser">🌐</div>
     </div>
-  </div>
+  </div><!-- /app -->
 
   <!-- ─── Settings Panel (overlay) ─────────────────────────────────────── -->
   <div id="settings-overlay" class="hidden">
@@ -192,6 +207,7 @@
               <div class="theme-preview solarized-light"></div>
               <span>Solarized Light</span>
             </div>
+          </div>
         </section>
         <!-- Terminal tab -->
         <section class="settings-section hidden" id="tab-terminal">
@@ -252,6 +268,7 @@
             </label>
           </div>
         </section>
+      </div>
     </div>
   </div>
 

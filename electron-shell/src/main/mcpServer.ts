@@ -4,25 +4,8 @@ import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { chromium, Browser, BrowserContext } from "playwright-core";
+import { BrowserWindow, ipcMain } from "electron";
 import express from "express";
-
-const CDP_URL = "http://localhost:9223";
-
-let browser: Browser | null = null;
-let browserContext: BrowserContext | null = null;
-
-async function ensureConnected() {
-    if (browser) return;
-    try {
-        browser = await chromium.connectOverCDP(CDP_URL);
-        browserContext = browser.contexts()[0];
-        console.error("[playwright-alt] Connected to Electron CDP");
-    } catch (e) {
-        console.error("[playwright-alt] CDP connection failed:", e);
-        throw e;
-    }
-}
 
 export class PlaywrightAltMcp {
     private app: express.Application;
@@ -31,13 +14,47 @@ export class PlaywrightAltMcp {
         this.app = express();
     }
 
+    private getMainWindow(): BrowserWindow | null {
+        const windows = BrowserWindow.getAllWindows();
+        return windows.length > 0 ? windows[0] : null;
+    }
+
+    private async sendToRendererAndWait<T>(
+        channel: string,
+        resultChannel: string,
+        data?: any,
+        timeout: number = 15000
+    ): Promise<T> {
+        return new Promise((resolve, reject) => {
+            const mainWindow = this.getMainWindow();
+            if (!mainWindow || mainWindow.isDestroyed()) {
+                reject(new Error("No main window available"));
+                return;
+            }
+
+            const timeoutId = setTimeout(() => {
+                ipcMain.removeListener(resultChannel, handler);
+                reject(new Error(`Timeout waiting for ${resultChannel}`));
+            }, timeout);
+
+            const handler = (_event: any, result: T) => {
+                clearTimeout(timeoutId);
+                ipcMain.removeListener(resultChannel, handler);
+                resolve(result);
+            };
+
+            ipcMain.on(resultChannel, handler);
+            mainWindow.webContents.send(channel, data);
+        });
+    }
+
     async run() {
         this.app.use(express.json());
 
         // Stateless StreamableHTTP endpoint - creates a new server per request
         this.app.all("/mcp", async (req, res) => {
             const server = new Server(
-                { name: "playwright-alt", version: "0.2.0" },
+                { name: "playwright-alt", version: "0.3.0" },
                 { capabilities: { tools: {} } }
             );
 
@@ -45,7 +62,7 @@ export class PlaywrightAltMcp {
                 tools: [
                     {
                         name: "browser_navigate",
-                        description: "IDE内蔵ブラウザパネルで指定URLに移動する",
+                        description: "IDE内蔵ブラウザパネルで指定URLに移動する（Electronのwebviewを操作）",
                         inputSchema: {
                             type: "object",
                             properties: { url: { type: "string", description: "URL to navigate to" } },
@@ -75,32 +92,83 @@ export class PlaywrightAltMcp {
             }));
 
             server.setRequestHandler(CallToolRequestSchema, async (request) => {
-                await ensureConnected();
-                const page = browserContext!.pages()[0];
+                const mainWindow = this.getMainWindow();
+                if (!mainWindow || mainWindow.isDestroyed()) {
+                    return {
+                        content: [{ type: "text", text: "❌ エラー: メインウィンドウが見つかりません" }]
+                    };
+                }
 
                 switch (request.params.name) {
                     case "browser_navigate": {
                         const { url } = request.params.arguments as { url: string };
-                        await page.goto(url, { waitUntil: "domcontentloaded" });
-                        return { content: [{ type: "text", text: `✅ IDE内蔵ブラウザで ${url} を開きました` }] };
+                        try {
+                            // Send navigate command to renderer
+                            mainWindow.webContents.send('browser:doNavigate', url);
+                            // Wait a bit for navigation to start
+                            await new Promise(r => setTimeout(r, 500));
+                            console.error(`[playwright-alt] Navigate to: ${url}`);
+                            return { content: [{ type: "text", text: `✅ IDE内蔵ブラウザで ${url} を開きました` }] };
+                        } catch (e: any) {
+                            return { content: [{ type: "text", text: `❌ ナビゲーションエラー: ${e.message}` }] };
+                        }
                     }
                     case "browser_screenshot": {
-                        const buf = await page.screenshot({ fullPage: false });
-                        return {
-                            content: [
-                                { type: "text", text: "✅ スクリーンショットを取得しました" },
-                                { type: "text", text: `data:image/png;base64,${buf.toString("base64")}` },
-                            ],
-                        };
+                        try {
+                            const result = await this.sendToRendererAndWait<{ ok: boolean; data?: string; error?: string }>(
+                                'browser:doScreenshot',
+                                'browser:screenshotResult',
+                                undefined,
+                                15000
+                            );
+                            if (result.ok && result.data) {
+                                return {
+                                    content: [
+                                        { type: "text", text: "✅ スクリーンショットを取得しました" },
+                                        { type: "text", text: result.data },
+                                    ],
+                                };
+                            } else {
+                                return { content: [{ type: "text", text: `❌ スクリーンショットエラー: ${result.error}` }] };
+                            }
+                        } catch (e: any) {
+                            return { content: [{ type: "text", text: `❌ スクリーンショットエラー: ${e.message}` }] };
+                        }
                     }
                     case "browser_click": {
                         const { selector } = request.params.arguments as { selector: string };
-                        await page.click(selector);
-                        return { content: [{ type: "text", text: `✅ "${selector}" をクリックしました` }] };
+                        try {
+                            const result = await this.sendToRendererAndWait<{ ok: boolean; error?: string }>(
+                                'browser:doClick',
+                                'browser:clickResult',
+                                selector,
+                                10000
+                            );
+                            if (result.ok) {
+                                return { content: [{ type: "text", text: `✅ "${selector}" をクリックしました` }] };
+                            } else {
+                                return { content: [{ type: "text", text: `❌ クリックエラー: ${result.error}` }] };
+                            }
+                        } catch (e: any) {
+                            return { content: [{ type: "text", text: `❌ クリックエラー: ${e.message}` }] };
+                        }
                     }
                     case "browser_get_dom": {
-                        const dom = await page.content();
-                        return { content: [{ type: "text", text: dom.slice(0, 8000) }] };
+                        try {
+                            const result = await this.sendToRendererAndWait<{ ok: boolean; data?: string; error?: string }>(
+                                'browser:doGetDom',
+                                'browser:domResult',
+                                undefined,
+                                10000
+                            );
+                            if (result.ok && result.data) {
+                                return { content: [{ type: "text", text: result.data.slice(0, 8000) }] };
+                            } else {
+                                return { content: [{ type: "text", text: `❌ DOM取得エラー: ${result.error}` }] };
+                            }
+                        } catch (e: any) {
+                            return { content: [{ type: "text", text: `❌ DOM取得エラー: ${e.message}` }] };
+                        }
                     }
                     default:
                         throw new Error(`Unknown tool: ${request.params.name}`);
@@ -119,7 +187,7 @@ export class PlaywrightAltMcp {
         });
 
         this.app.listen(3333, () => {
-            console.error("[playwright-alt] MCP server on http://localhost:3333/mcp");
+            console.error("[playwright-alt] MCP server on http://localhost:3333/mcp (IPC mode)");
         });
     }
 }

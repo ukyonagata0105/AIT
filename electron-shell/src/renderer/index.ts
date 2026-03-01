@@ -48,29 +48,116 @@ declare const window: Window & {
 
 const isElectron = typeof window.electronAPI !== 'undefined';
 
+// ─── WebSocket Client for Web Mode ─────────────────────────────────────────────
+
+let webSocket: WebSocket | null = null;
+let wsReady = false;
+let wsMessageHandlers: ((msg: any) => void)[] = [];
+
+function initWebSocket(): Promise<void> {
+    return new Promise((resolve) => {
+        if (webSocket && wsReady) {
+            resolve();
+            return;
+        }
+        
+        // Determine WebSocket URL from current page URL
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}`;
+        
+        console.log('[WebMode] Connecting to WebSocket:', wsUrl);
+        webSocket = new WebSocket(wsUrl);
+        
+        webSocket.onopen = () => {
+            console.log('[WebMode] WebSocket connected');
+            wsReady = true;
+            resolve();
+        };
+        
+        webSocket.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                wsMessageHandlers.forEach(handler => handler(msg));
+            } catch (e) {
+                console.error('[WebMode] Error parsing WebSocket message:', e);
+            }
+        };
+        
+        webSocket.onclose = () => {
+            console.log('[WebMode] WebSocket disconnected');
+            wsReady = false;
+            // Try to reconnect after 2 seconds
+            setTimeout(() => {
+                if (!isElectron) {
+                    initWebSocket();
+                }
+            }, 2000);
+        };
+        
+        webSocket.onerror = (error) => {
+            console.error('[WebMode] WebSocket error:', error);
+            wsReady = false;
+            resolve(); // Resolve anyway to not block initialization
+        };
+    });
+}
+
+function wsSend(msg: any) {
+    if (webSocket && wsReady) {
+        webSocket.send(JSON.stringify(msg));
+    } else {
+        console.warn('[WebMode] WebSocket not ready, cannot send:', msg);
+    }
+}
+
+
 // Hybrid API: Works in both Electron and Web mode
 const api = {
     // PTY operations (WebSocket in web mode)
     ptyCreate: async (args: { id: string; cwd: string; cols: number; rows: number }) => {
         if (isElectron) return window.electronAPI!.ptyCreate(args);
-        // Web mode: WebSocket will handle this
+        // Web mode: send via WebSocket
+        wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
         return { ok: true };
     },
     ptyInput: (args: { id: string; data: string }) => {
         if (isElectron) window.electronAPI!.ptyInput(args);
-        // Web mode: WebSocket will handle this
+        // Web mode: send via WebSocket
+        wsSend({ type: 'input', id: args.id, data: args.data });
     },
     ptyResize: (args: { id: string; cols: number; rows: number }) => {
         if (isElectron) window.electronAPI!.ptyResize(args);
+        // Web mode: send via WebSocket
+        wsSend({ type: 'resize', id: args.id, cols: args.cols, rows: args.rows });
     },
     ptyKill: (args: { id: string }) => {
         if (isElectron) window.electronAPI!.ptyKill(args);
+        // Web mode: send via WebSocket
+        wsSend({ type: 'kill', id: args.id });
     },
     onPtyData: (cb: (a: { id: string; data: string }) => void) => {
-        if (isElectron) window.electronAPI!.onPtyData(cb);
+        if (isElectron) {
+            window.electronAPI!.onPtyData(cb);
+        } else {
+            // Web mode: register handler for WebSocket messages
+            wsMessageHandlers.push((msg) => {
+                if (msg.type === 'data') {
+                    cb({ id: msg.id, data: msg.data });
+                }
+            });
+        }
     },
     onPtyExit: (cb: (a: { id: string; exitCode: number }) => void) => {
-        if (isElectron) window.electronAPI!.onPtyExit(cb);
+        if (isElectron) {
+            window.electronAPI!.onPtyExit(cb);
+        } else {
+            // Web mode: register handler for WebSocket messages
+            wsMessageHandlers.push((msg) => {
+                if (msg.type === 'exit') {
+                    cb({ id: msg.id, exitCode: msg.exitCode });
+                }
+            });
+        }
     },
 
     // Workspace operations
@@ -2082,46 +2169,140 @@ document.getElementById('image-canvas-area')?.addEventListener('wheel', (e: Even
     applyImageZoom();
 }, { passive: false });
 
-// ─── Browser Panel ─────────────────────────────────────────────────────────────
+// ─── Browser Panel (supports both Electron webview and Web iframe) ──────────────
 
-function openBrowserPanel(url?: string) {
-    switchRightView('browser');
-    const webview = document.getElementById('browser-webview') as Electron.WebviewTag;
-    const urlBar = document.getElementById('browser-url-bar') as HTMLInputElement;
-    const target = url || urlBar.value || 'http://localhost:3000';
-    const normalizedUrl = target.startsWith('http') ? target : `https://${target}`;
-    webview.src = normalizedUrl;
-    urlBar.value = normalizedUrl;
+// Detect runtime environment
+const browserIsElectron = typeof window.electronAPI !== 'undefined';
+
+// Get browser elements
+const browserWebview = document.getElementById('browser-webview') as Electron.WebviewTag | null;
+const browserIframe = document.getElementById('browser-iframe') as HTMLIFrameElement | null;
+const browserUrlBar = document.getElementById('browser-url-bar') as HTMLInputElement | null;
+const browserContent = document.querySelector('.browser-content') as HTMLElement | null;
+
+// Hide webview in web mode, hide iframe in Electron
+if (browserIsElectron) {
+    browserIframe?.setAttribute('style', 'display:none;');
+    // Set explicit inline styles for webview to prevent full-screen takeover
+    browserWebview?.setAttribute('style', 'position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;border:none;');
+} else {
+    browserWebview?.setAttribute('style', 'display:none;');
+    browserIframe?.setAttribute('style', 'position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;border:none;');
 }
 
-const browserWebview = document.getElementById('browser-webview') as Electron.WebviewTag;
-const browserUrlBar = document.getElementById('browser-url-bar') as HTMLInputElement;
+// Browser zoom state - default 50%
+let browserZoom = 0.5;
 
+function applyBrowserZoom() {
+    if (browserIsElectron && browserWebview) {
+        (browserWebview as any).setZoomFactor(browserZoom);
+    }
+}
+
+// Initialize zoom on webview ready
+if (browserIsElectron && browserWebview) {
+    browserWebview.addEventListener('dom-ready', () => {
+        applyBrowserZoom();
+    });
+}
+
+// Zoom controls
+document.getElementById('browser-zoom-in')?.addEventListener('click', () => {
+    browserZoom = Math.min(2.0, browserZoom + 0.1);
+    applyBrowserZoom();
+});
+document.getElementById('browser-zoom-out')?.addEventListener('click', () => {
+    browserZoom = Math.max(0.1, browserZoom - 0.1);
+    applyBrowserZoom();
+});
+document.getElementById('browser-zoom-reset')?.addEventListener('click', () => {
+    browserZoom = 0.5; // Reset to 50%
+    applyBrowserZoom();
+});
+function openBrowserPanel(url?: string) {
+    switchRightView('browser');
+    
+    // Force layout recalculation before loading URL
+    // This ensures the container has proper dimensions
+    if (browserContent) {
+        const rect = browserContent.getBoundingClientRect();
+        console.log('[Browser] Container size:', rect.width, 'x', rect.height);
+        
+        // If container has no size, wait for layout
+        if (rect.width === 0 || rect.height === 0) {
+            console.warn('[Browser] Container has zero size, may cause layout issues');
+        }
+    }
+    
+    const target = url || browserUrlBar?.value || 'https://google.com';
+    const normalizedUrl = target.startsWith('http') ? target : `https://${target}`;
+    
+    if (browserIsElectron && browserWebview) {
+        browserWebview.src = normalizedUrl;
+    } else if (browserIframe) {
+        browserIframe.src = normalizedUrl;
+    }
+    
+    if (browserUrlBar) {
+        browserUrlBar.value = normalizedUrl;
+    }
+}
+
+// URL bar navigation
 browserUrlBar?.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') openBrowserPanel(browserUrlBar.value);
 });
 
-document.getElementById('browser-back')?.addEventListener('click', () => {
-    if (browserWebview?.canGoBack()) browserWebview.goBack();
-});
-document.getElementById('browser-fwd')?.addEventListener('click', () => {
-    if (browserWebview?.canGoForward()) browserWebview.goForward();
-});
-document.getElementById('browser-reload')?.addEventListener('click', () => {
-    browserWebview?.reload();
-});
-document.getElementById('browser-devtools')?.addEventListener('click', () => {
-    browserWebview?.openDevTools();
-});
-
-browserWebview?.addEventListener('did-navigate', (e: Event) => {
-    const nav = e as any;
-    if (browserUrlBar && nav.url) browserUrlBar.value = nav.url;
-});
-browserWebview?.addEventListener('did-navigate-in-page', (e: Event) => {
-    const nav = e as any;
-    if (browserUrlBar && nav.url) browserUrlBar.value = nav.url;
-});
+// Navigation buttons (Electron only - webview has these methods)
+if (browserIsElectron && browserWebview) {
+    document.getElementById('browser-back')?.addEventListener('click', () => {
+        if (browserWebview.canGoBack()) browserWebview.goBack();
+    });
+    document.getElementById('browser-fwd')?.addEventListener('click', () => {
+        if (browserWebview.canGoForward()) browserWebview.goForward();
+    });
+    document.getElementById('browser-reload')?.addEventListener('click', () => {
+        browserWebview.reload();
+    });
+    document.getElementById('browser-devtools')?.addEventListener('click', () => {
+        browserWebview.openDevTools();
+    });
+    
+    // Sync URL bar with navigation
+    browserWebview.addEventListener('did-navigate', (e: Event) => {
+        const nav = e as any;
+        if (browserUrlBar && nav.url) browserUrlBar.value = nav.url;
+    });
+    browserWebview.addEventListener('did-navigate-in-page', (e: Event) => {
+        const nav = e as any;
+        if (browserUrlBar && nav.url) browserUrlBar.value = nav.url;
+    });
+    
+    // Log webview events for debugging
+    browserWebview.addEventListener('did-start-loading', () => {
+        console.log('[Browser] Started loading:', browserWebview.src);
+    });
+    browserWebview.addEventListener('did-stop-loading', () => {
+        console.log('[Browser] Finished loading');
+    });
+    browserWebview.addEventListener('did-fail-load', (e: any) => {
+        console.error('[Browser] Failed to load:', e.errorCode, e.errorDescription);
+    });
+} else {
+    // Web mode: simpler reload (just re-set src)
+    document.getElementById('browser-reload')?.addEventListener('click', () => {
+        if (browserIframe && browserUrlBar) {
+            browserIframe.src = browserUrlBar.value;
+        }
+    });
+    
+    // Hide devtools button in web mode (not available)
+    document.getElementById('browser-devtools')?.setAttribute('style', 'display:none;');
+    
+    // Hide back/fwd in web mode (iframe doesn't support history)
+    document.getElementById('browser-back')?.setAttribute('style', 'display:none;');
+    document.getElementById('browser-fwd')?.setAttribute('style', 'display:none;');
+}
 
 // ─── Explorer File Type Routing ────────────────────────────────────────────────
 
@@ -2138,9 +2319,91 @@ function routeFileOpen(filePath: string) {
     // Otherwise the existing text viewer in the explorer view handles it
 }
 
+// ─── Browser Panel IPC Handlers (for MCP) ───────────────────────────────────────
+
+// Only set up IPC listeners in Electron mode
+if (browserIsElectron && (window as any).electronAPI) {
+    const electronApi = (window as any).electronAPI;
+
+    // Handle navigate request from main process
+    electronApi.onBrowserNavigate((url: string) => {
+        console.log('[Browser IPC] Navigate to:', url);
+        openBrowserPanel(url);
+    });
+
+    // Handle screenshot request
+    electronApi.onBrowserScreenshot(async () => {
+        console.log('[Browser IPC] Screenshot request');
+        try {
+            if (browserWebview) {
+                // Use webview's capturePage method
+                const image = await (browserWebview as any).capturePage();
+                const dataUrl = image.toDataURL();
+                electronApi.sendScreenshotResult({ ok: true, data: dataUrl });
+            } else {
+                electronApi.sendScreenshotResult({ ok: false, error: 'No webview available' });
+            }
+        } catch (e: any) {
+            console.error('[Browser IPC] Screenshot error:', e);
+            electronApi.sendScreenshotResult({ ok: false, error: e.message });
+        }
+    });
+
+    // Handle click request
+    electronApi.onBrowserClick(async (selector: string) => {
+        console.log('[Browser IPC] Click:', selector);
+        try {
+            if (browserWebview) {
+                // Execute click in webview context
+                await (browserWebview as any).executeJavaScript(`
+                    (function() {
+                        const el = document.querySelector('${selector}');
+                        if (el) {
+                            el.click();
+                            return true;
+                        }
+                        return false;
+                    })()
+                `);
+                electronApi.sendClickResult({ ok: true });
+            } else {
+                electronApi.sendClickResult({ ok: false, error: 'No webview available' });
+            }
+        } catch (e: any) {
+            console.error('[Browser IPC] Click error:', e);
+            electronApi.sendClickResult({ ok: false, error: e.message });
+        }
+    });
+
+    // Handle get DOM request
+    electronApi.onBrowserGetDom(async () => {
+        console.log('[Browser IPC] Get DOM');
+        try {
+            if (browserWebview) {
+                const dom = await (browserWebview as any).executeJavaScript('document.documentElement.outerHTML');
+                electronApi.sendDomResult({ ok: true, data: dom.slice(0, 100000) }); // Limit to 100KB
+            } else {
+                electronApi.sendDomResult({ ok: false, error: 'No webview available' });
+            }
+        } catch (e: any) {
+            console.error('[Browser IPC] Get DOM error:', e);
+            electronApi.sendDomResult({ ok: false, error: e.message });
+        }
+    });
+
+    console.log('[Browser IPC] Handlers registered');
+}
+
 // ─── Bootstrap ───────────────────────────────────────────────────────
 
 async function init() {
+    // Load terminal layout settings
+    loadTerminalLayoutSettings();
+    
+    // CRITICAL FIX: Wait for WebSocket in web mode before creating terminals
+    if (!isElectron) {
+        await initWebSocket();
+    }
     // Load terminal layout settings
     loadTerminalLayoutSettings();
     

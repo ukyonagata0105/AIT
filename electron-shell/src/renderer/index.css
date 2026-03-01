@@ -1861,8 +1861,28 @@ body {
   gap: 4px;
 }
 
+/* ─── Browser Panel (following Cursor's containment pattern) ─────────── */
 #view-browser {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   background: #fff;
+  /* Critical: contain the webview/iframe within this panel */
+  position: relative;
+  z-index: 1; /* Lower than modals, higher than background */
+}
+
+/* Browser content wrapper - holds webview or iframe */
+.browser-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  /* Force GPU layer to prevent webview from escaping */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* ─── Right Panel Layout ─────────────────────────────────────────────────── */
@@ -1877,25 +1897,38 @@ body {
   z-index: 1; /* establish stacking context above auto, below top-bar (z-index: 100) */
 }
 
-/* ─── Browser Webview Containment ────────────────────────────────────────── */
-#browser-webview {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
+/* ─── Browser Webview/iframe Containment (Critical fix) ─────────────── */
+/* Electron webview needs explicit sizing to prevent full-screen takeover */
+#browser-webview,
+#browser-iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
+  height: 100%;
   border: none;
+  background: #fff;
+  /* Force GPU compositing within container */
+  transform: translateZ(0);
+  will-change: transform;
+  will-change: transform;
 }
 
-/* Ensure view-browser doesn't bleed out of right panel */
-#view-browser {
+/* Fallback message for unsupported environments */
+.browser-fallback {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: #fff;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
 }
+
 
 
 /* ─── Explorer Sort Bar ──────────────────────────────────────────────────── */
