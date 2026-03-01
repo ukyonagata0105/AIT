@@ -743,6 +743,15 @@ function hideContextMenu() { ctxMenu.classList.add('hidden'); }
 window.addEventListener('click', () => hideContextMenu());
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideContextMenu(); settingsOverlay.classList.add('hidden'); } });
 
+// Resize all terminals when window resizes
+let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+window.addEventListener('resize', () => {
+    if (resizeTimeout) clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+        refreshTerminal();
+    }, 100);
+});
+
 ctxRename.addEventListener('click', async () => {
     hideContextMenu();
     if (!ctxTargetWsId) return;
@@ -1203,6 +1212,17 @@ function renderTerminalGrid() {
             tab.cell.classList.toggle('active', tab.id === activeTabId);
         }
     });
+    
+    // Fit all terminals after grid render
+    requestAnimationFrame(() => {
+        tabs.forEach(tab => {
+            try {
+                tab.fitAddon.fit();
+            } catch (e) {
+                // Ignore fit errors for hidden terminals
+            }
+        });
+    });
 }
 
 function renderTerminalTabs() {
@@ -1231,13 +1251,15 @@ function renderTerminalTabs() {
 }
 
 function refreshTerminal() {
-    if (activeFitAddon) {
+    // Fit all terminals in current workspace
+    const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
+    tabs.forEach(tab => {
         try {
-            activeFitAddon.fit();
+            tab.fitAddon.fit();
         } catch (e) {
-            console.warn('Failed to fit terminal:', e);
+            // Ignore fit errors
         }
-    }
+    });
 }
 
 function switchTerminalTab(tabId: string) {
