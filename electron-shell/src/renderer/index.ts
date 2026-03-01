@@ -1213,16 +1213,24 @@ function renderTerminalGrid() {
         }
     });
     
-    // Fit all terminals after grid render
-    requestAnimationFrame(() => {
+    // Fit all terminals after grid render (delay for DOM layout)
+    setTimeout(() => {
         tabs.forEach(tab => {
             try {
                 tab.fitAddon.fit();
+                // Resize PTY to match terminal size
+                if (tab.ptyId) {
+                    api.ptyResize({
+                        id: tab.ptyId,
+                        cols: tab.term.cols,
+                        rows: tab.term.rows
+                    });
+                }
             } catch (e) {
-                // Ignore fit errors for hidden terminals
+                console.warn('Failed to fit terminal:', e);
             }
         });
-    });
+    }, 50);
 }
 
 function renderTerminalTabs() {
@@ -1256,6 +1264,14 @@ function refreshTerminal() {
     tabs.forEach(tab => {
         try {
             tab.fitAddon.fit();
+            // Resize PTY to match terminal size
+            if (tab.ptyId) {
+                api.ptyResize({
+                    id: tab.ptyId,
+                    cols: tab.term.cols,
+                    rows: tab.term.rows
+                });
+            }
         } catch (e) {
             // Ignore fit errors
         }
@@ -1282,7 +1298,8 @@ function switchTerminalTab(tabId: string) {
     activePtyId = tab.ptyId;
 
     // Resize to fit
-    requestAnimationFrame(() => {
+    // Resize to fit (delay for DOM layout)
+    setTimeout(() => {
         try {
             activeFitAddon!.fit();
             api.ptyResize({
@@ -1293,7 +1310,7 @@ function switchTerminalTab(tabId: string) {
         } catch (e) {
             console.error('Error resizing terminal:', e);
         }
-    });
+    }, 50);
 
     try {
         activeTerm.focus();
