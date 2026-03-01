@@ -1982,11 +1982,16 @@ async function openFile(filePath: string, itemEl: HTMLElement) {
     }
 }
 
-// ─── PTY IPC ─────────────────────────────────────────────────────────────────
-
-api.onPtyData(({ id, data }) => { if (id === activePtyId) activeTerm?.write(data); });
+api.onPtyData(({ id, data }) => { 
+    // In web mode, also accept data from watched PTY
+    if (id === activePtyId || (!isElectron && id === wsWatchPtyId)) {
+        activeTerm?.write(data);
+    }
+});
 api.onPtyExit(({ id, exitCode }) => {
-    if (id === activePtyId) activeTerm?.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
+    if (id === activePtyId || (!isElectron && id === wsWatchPtyId)) {
+        activeTerm?.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
+    }
 });
 // ─── Sash resizing ────────────────────────────────────────────────────────────
 

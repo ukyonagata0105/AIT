@@ -11,6 +11,11 @@ interface PtySession {
 export class PtyManager extends EventEmitter {
     private sessions = new Map<string, PtySession>();
 
+    // Get all active PTY session IDs
+    getSessionIds(): string[] {
+        return Array.from(this.sessions.keys());
+    }
+
     create(id: string, cwd: string, cols: number, rows: number): void {
         if (this.sessions.has(id)) {
             this.kill(id);

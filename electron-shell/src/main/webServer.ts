@@ -93,6 +93,13 @@ export function startWebServer(port: number = 4096): void {
             res.status(500).json({ error: 'Failed to read file' });
         }
     });
+
+    // API endpoint to get active PTY sessions (for web sharing)
+    app.get('/api/pty/list', (req, res) => {
+        const pty = getPtyManager();
+        const activeIds = pty.getSessionIds();
+        res.json({ sessions: activeIds });
+    });
     
     // SPA fallback - serve index.html for all routes
     app.use((req, res) => {
@@ -123,6 +130,14 @@ export function startWebServer(port: number = 4096): void {
         
         const pty = getPtyManager();
         
+        // Auto-attach to existing PTY if any (for sharing with Electron)
+        const existingSessions = pty.getSessionIds();
+        if (existingSessions.length > 0) {
+            currentPtyId = existingSessions[0];
+            console.log(`[WebServer] Auto-attaching to existing PTY: ${currentPtyId}`);
+            ws.send(JSON.stringify({ type: 'attached', id: currentPtyId }));
+        }
+        
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
         
@@ -134,6 +149,11 @@ export function startWebServer(port: number = 4096): void {
                     case 'create':
                         currentPtyId = msg.id;
                         pty.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
+                        break;
+                    case 'watch':
+                        // Watch existing PTY (attach to Electron's PTY)
+                        currentPtyId = msg.id;
+                        console.log(`[WebServer] Client watching PTY: ${msg.id}`);
                         break;
                     case 'input':
                         if (msg.id) {
