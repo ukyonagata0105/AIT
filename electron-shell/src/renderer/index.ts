@@ -169,6 +169,81 @@ let wsBarCollapsed = false;
 let activeTerm: Terminal | null = null;
 let activeFitAddon: FitAddon | null = null;
 let activePtyId: string | null = null;
+
+// Terminal layout settings (shared with web mode via localStorage)
+type TerminalLayoutMode = 'horizontal' | 'vertical' | 'auto';
+interface TerminalLayoutSettings {
+    mode: TerminalLayoutMode;
+    customLayouts: Record<number, string[]>; // terminal count -> ordered tab IDs
+    fontSize: number; // Terminal font size in px
+    scrollback: number; // Terminal scrollback lines
+}
+let terminalLayoutSettings: TerminalLayoutSettings = {
+    mode: 'horizontal',
+    customLayouts: {},
+    fontSize: 13,
+    scrollback: 100
+};
+
+// Load layout settings from localStorage
+function loadTerminalLayoutSettings() {
+    try {
+        const saved = localStorage.getItem('terminal-layout-settings');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            terminalLayoutSettings = {
+                ...terminalLayoutSettings,
+                ...parsed
+            };
+            // Validate scrollback (must be positive integer)
+            if (!Number.isInteger(terminalLayoutSettings.scrollback) || terminalLayoutSettings.scrollback < 1) {
+                terminalLayoutSettings.scrollback = 100;
+            }
+            // Validate fontSize (must be 8-32)
+            if (!Number.isInteger(terminalLayoutSettings.fontSize) || terminalLayoutSettings.fontSize < 8 || terminalLayoutSettings.fontSize > 32) {
+                terminalLayoutSettings.fontSize = 13;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load terminal layout settings:', e);
+    }
+}
+
+// Save layout settings to localStorage
+function saveTerminalLayoutSettings() {
+    try {
+        localStorage.setItem('terminal-layout-settings', JSON.stringify(terminalLayoutSettings));
+    } catch (e) {
+        console.error('Failed to save terminal layout settings:', e);
+    }
+}
+
+// Update font size for all terminals
+function updateAllTerminalFontSizes() {
+    const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
+    tabs.forEach(tab => {
+        if (tab.term) {
+            tab.term.options.fontSize = terminalLayoutSettings.fontSize;
+        }
+    });
+    
+    // Update display
+    const display = document.getElementById('font-size-display');
+    if (display) {
+        display.textContent = String(terminalLayoutSettings.fontSize);
+    }
+}
+
+// Change font size
+function changeFontSize(delta: number) {
+    const newSize = terminalLayoutSettings.fontSize + delta;
+    if (newSize >= 8 && newSize <= 32) {
+        terminalLayoutSettings.fontSize = newSize;
+        saveTerminalLayoutSettings();
+        updateAllTerminalFontSizes();
+    }
+}
+
 // Map workspace IDs to their saved terminal state (PTY ID + dimensions)
 const workspaceTerminalStates = new Map<string, TerminalState>();
 
@@ -329,6 +404,82 @@ document.querySelectorAll('.settings-tab').forEach(btn => {
 settingsClose.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
 settingsOverlay.addEventListener('click', (e) => {
     if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden');
+});
+
+// Terminal layout settings
+function initTerminalLayoutSettings() {
+    const layoutInputs = document.querySelectorAll('input[name="terminal-layout"]');
+    layoutInputs.forEach(input => {
+        // Set current value
+        if ((input as HTMLInputElement).value === terminalLayoutSettings.mode) {
+            (input as HTMLInputElement).checked = true;
+        }
+        
+        // Listen for changes
+        input.addEventListener('change', () => {
+            terminalLayoutSettings.mode = (input as HTMLInputElement).value as TerminalLayoutMode;
+            saveTerminalLayoutSettings();
+            updateTerminalGrid();
+            
+            // Re-render grid with new layout
+            const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
+            tabs.forEach(tab => {
+                if (tab.cell) {
+                    tab.cell.style.order = '';
+                }
+            });
+        });
+    });
+    
+    // Font size controls
+    const fontSizeDisplay = document.getElementById('font-size-display');
+    if (fontSizeDisplay) {
+        fontSizeDisplay.textContent = String(terminalLayoutSettings.fontSize);
+    }
+    
+    const decreaseBtn = document.getElementById('font-size-decrease');
+    const increaseBtn = document.getElementById('font-size-increase');
+    
+    if (decreaseBtn) {
+        decreaseBtn.addEventListener('click', () => changeFontSize(-1));
+    }
+    
+    if (increaseBtn) {
+        increaseBtn.addEventListener('click', () => changeFontSize(1));
+    }
+    
+    // Scrollback controls
+    const scrollbackInputs = document.querySelectorAll('input[name="scrollback"]');
+    scrollbackInputs.forEach(input => {
+        // Set current value
+        if (parseInt((input as HTMLInputElement).value) === terminalLayoutSettings.scrollback) {
+            (input as HTMLInputElement).checked = true;
+        }
+        
+        // Listen for changes
+        input.addEventListener('change', () => {
+            terminalLayoutSettings.scrollback = parseInt((input as HTMLInputElement).value);
+            saveTerminalLayoutSettings();
+            
+            // Update all existing terminals
+            const allTabs = Array.from(workspaceTerminals.values()).flat();
+            allTabs.forEach(tab => {
+                if (tab.term) {
+                    tab.term.options.scrollback = terminalLayoutSettings.scrollback;
+                }
+            });
+        });
+    });
+}
+
+// Initialize on first settings open
+let terminalLayoutSettingsInitialized = false;
+const originalSettingsClick = settingsBtn.onclick;
+settingsBtn.addEventListener('click', () => {
+    if (!terminalLayoutSettingsInitialized) {
+        initTerminalLayoutSettings();
+        terminalLayoutSettingsInitialized = true;
+    }
 });
 
 // ─── Theme System ─────────────────────────────────────────────────────────────
@@ -653,7 +804,6 @@ api.onExtensionInstall((id: string) => installExtension(id));
 
 
 
-// ─── Switch Workspace ─────────────────────────────────────────────────────
 async function switchWorkspace(wsId: string) {
     if (wsId === activeWorkspaceId) return;
 
@@ -661,13 +811,20 @@ async function switchWorkspace(wsId: string) {
         applyTheme('dark');
     }
 
-    // STEP 1: Hide current terminal (keep alive)
-    if (activeWorkspaceId && activeTerm && activeTerm.element) {
-        try {
-            activeTerm.element.style.display = 'none';
-        } catch (e) {
-            console.error('Error hiding terminal:', e);
-        }
+    // STEP 1: Save current workspace state
+    if (activeWorkspaceId) {
+        const currentTabs = workspaceTerminals.get(activeWorkspaceId) || [];
+        const currentActiveTab = currentTabs.find(t => t.id === activeTabId);
+        
+        // Save active tab ID for this workspace
+        workspaceActiveTabs.set(activeWorkspaceId, activeTabId);
+        
+        // Detach terminal cells from DOM (keep PTY alive)
+        currentTabs.forEach(tab => {
+            if (tab.cell && tab.cell.parentElement) {
+                tab.cell.parentElement.removeChild(tab.cell);
+            }
+        });
     }
 
     // STEP 2: Update workspace reference
@@ -692,8 +849,15 @@ async function switchWorkspace(wsId: string) {
         // Render tabs UI
         renderTerminalTabs();
         
-        // Switch to first tab (or active one if exists)
-        const tabToActivate = tabs.find(t => t.id === activeTabId) || tabs[0];
+        // Render terminal grid (this attaches cells to DOM)
+        renderTerminalGrid();
+        
+        // Restore active tab
+        const savedActiveTabId = workspaceActiveTabs.get(wsId);
+        const tabToActivate = savedActiveTabId 
+            ? tabs.find(t => t.id === savedActiveTabId) 
+            : tabs[0];
+        
         if (tabToActivate) {
             switchTerminalTab(tabToActivate.id);
         }
@@ -705,15 +869,29 @@ async function switchWorkspace(wsId: string) {
     loadExplorer(ws.path, ws.name);
 }
 
+// Map workspace ID to active tab ID
+const workspaceActiveTabs = new Map<string, string | null>();
 // ─── Terminal Tab Management ─────────────────────────────────────────────────────
 
-// Update grid layout based on terminal count
+// Update grid layout based on terminal count and settings
 function updateTerminalGrid() {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     terminalPaneEl.setAttribute('data-count', String(tabs.length));
+    terminalPaneEl.setAttribute('data-layout', terminalLayoutSettings.mode);
     
-    // Show/hide tabs bar based on count (hide if single terminal in grid mode)
-    // terminalTabsEl.style.display = tabs.length <= 1 ? 'flex' : 'flex';
+    // Update settings UI radio button
+    const layoutRadio = document.querySelector(`input[name="terminal-layout"][value="${terminalLayoutSettings.mode}"]`) as HTMLInputElement;
+    if (layoutRadio) {
+        layoutRadio.checked = true;
+    }
+    
+    // Apply custom ordering if exists
+    const customOrder = terminalLayoutSettings.customLayouts[tabs.length];
+    if (customOrder && customOrder.length === tabs.length) {
+        terminalPaneEl.setAttribute('data-custom', 'true');
+    } else {
+        terminalPaneEl.removeAttribute('data-custom');
+    }
 }
 
 // Create a grid cell for a terminal
@@ -735,19 +913,65 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
     const content = document.createElement('div');
     content.className = 'terminal-cell-content';
     
+    // Drop zones (invisible by default)
+    const dropZones = document.createElement('div');
+    dropZones.className = 'terminal-drop-zones';
+    dropZones.innerHTML = `
+        <div class="drop-zone drop-left" data-position="left"></div>
+        <div class="drop-zone drop-right" data-position="right"></div>
+        <div class="drop-zone drop-top" data-position="top"></div>
+        <div class="drop-zone drop-bottom" data-position="bottom"></div>
+    `;
+    
     cell.appendChild(header);
     cell.appendChild(content);
+    cell.appendChild(dropZones);
     
     // Drag events
     header.addEventListener('dragstart', (e) => {
         cell.classList.add('dragging');
         e.dataTransfer?.setData('text/plain', tab.id);
+        // Show drop zones on all cells
+        document.querySelectorAll('.terminal-cell').forEach(c => {
+            c.classList.add('show-drop-zones');
+        });
     });
     
     header.addEventListener('dragend', () => {
         cell.classList.remove('dragging');
+        // Hide drop zones
+        document.querySelectorAll('.terminal-cell').forEach(c => {
+            c.classList.remove('show-drop-zones');
+        });
     });
     
+    // Drop zone events
+    dropZones.querySelectorAll('.drop-zone').forEach(zone => {
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (zone as HTMLElement).classList.add('active');
+        });
+        
+        zone.addEventListener('dragleave', () => {
+            (zone as HTMLElement).classList.remove('active');
+        });
+        
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (zone as HTMLElement).classList.remove('active');
+            
+            const draggedId = e.dataTransfer?.getData('text/plain');
+            const position = (zone as HTMLElement).dataset.position;
+            
+            if (draggedId && draggedId !== tab.id && position) {
+                insertTerminalAt(draggedId, tab.id, position);
+            }
+        });
+    });
+    
+    // Legacy drop on cell (swap)
     cell.addEventListener('dragover', (e) => {
         e.preventDefault();
         cell.classList.add('drag-over');
@@ -792,8 +1016,63 @@ function swapTerminals(id1: string, id2: string) {
     [tabs[idx1], tabs[idx2]] = [tabs[idx2], tabs[idx1]];
     workspaceTerminals.set(activeWorkspaceId!, tabs);
     
+    // Save custom layout
+    saveCustomLayout(tabs);
+    
     // Re-render grid
     renderTerminalGrid();
+}
+
+// Insert terminal at specific position relative to target
+function insertTerminalAt(draggedId: string, targetId: string, position: string) {
+    const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
+    const draggedIdx = tabs.findIndex(t => t.id === draggedId);
+    const targetIdx = tabs.findIndex(t => t.id === targetId);
+    
+    if (draggedIdx === -1 || targetIdx === -1) return;
+    
+    // Remove dragged from current position
+    const [dragged] = tabs.splice(draggedIdx, 1);
+    
+    // Calculate new index based on position
+    let newIdx = targetIdx;
+    if (draggedIdx < targetIdx) newIdx--; // Adjust for removal
+    
+    switch (position) {
+        case 'left':
+        case 'top':
+            // Insert before target
+            break;
+        case 'right':
+        case 'bottom':
+            // Insert after target
+            newIdx++;
+            break;
+    }
+    
+    // Insert at new position
+    tabs.splice(newIdx, 0, dragged);
+    workspaceTerminals.set(activeWorkspaceId!, tabs);
+    
+    // Update layout mode based on drop position
+    if (position === 'left' || position === 'right') {
+        terminalLayoutSettings.mode = 'horizontal';
+    } else if (position === 'top' || position === 'bottom') {
+        terminalLayoutSettings.mode = 'vertical';
+    }
+    saveTerminalLayoutSettings();
+    
+    // Save custom layout
+    saveCustomLayout(tabs);
+    
+    // Re-render grid
+    renderTerminalGrid();
+}
+
+// Save custom layout order
+function saveCustomLayout(tabs: TerminalTab[]) {
+    terminalLayoutSettings.customLayouts[tabs.length] = tabs.map(t => t.id);
+    saveTerminalLayoutSettings();
 }
 
 // Render all terminals in grid
@@ -895,7 +1174,8 @@ function createTerminalTab(cwd: string): TerminalTab {
     
     const term = new Terminal({
         fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-        fontSize: 13, lineHeight: 1.2, cursorBlink: true,
+        fontSize: terminalLayoutSettings.fontSize, lineHeight: 1.2, cursorBlink: true,
+        scrollback: Math.max(1, terminalLayoutSettings.scrollback || 100),
         theme: THEMES[currentTheme],
     });
 
@@ -1018,7 +1298,8 @@ function resetCurrentTerminal() {
     // Create new terminal for this tab
     const term = new Terminal({
         fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-        fontSize: 13, lineHeight: 1.2, cursorBlink: true,
+        fontSize: terminalLayoutSettings.fontSize, lineHeight: 1.2, cursorBlink: true,
+        scrollback: Math.max(1, terminalLayoutSettings.scrollback || 100),
         theme: THEMES[currentTheme],
     });
 
@@ -1860,6 +2141,9 @@ function routeFileOpen(filePath: string) {
 // ─── Bootstrap ───────────────────────────────────────────────────────
 
 async function init() {
+    // Load terminal layout settings
+    loadTerminalLayoutSettings();
+    
     applyTheme(currentTheme);
     
     // CRITICAL FIX: Show empty state during loading to prevent flicker

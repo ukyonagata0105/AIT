@@ -1,54 +1,98 @@
-# AI Terminal IDE - Fix & Feature Tasks
+# AI Terminal IDE - ターミナルレイアウト設定
 
 **Generated:** 2026-03-01
-**Updated:** 2026-03-01
-**Status:** ✅ ALL COMPLETED
+**Status:** 設計中
 
 ---
 
-## 📋 Task Summary
+## 📋 要件
 
-| # | Task | Priority | Effort | Status |
-|---|------|----------|--------|--------|
-| 1 | Web Mode Crash Fix | HIGH | MEDIUM | ✅ **DONE** |
-| 2 | Terminal Add Button | HIGH | LOW | ✅ **DONE** |
-| 3 | Terminal Layout System (Grid + Drag&Drop) | MEDIUM | HIGH | ✅ **DONE** |
-| 4 | Explorer Type Grouping | MEDIUM | MEDIUM | ✅ **DONE** |
-| 5 | Explorer Breadcrumb Navigation | MEDIUM | LOW | ✅ **DONE** |
-| 6 | Explorer Keyboard Navigation | LOW | LOW | ✅ **DONE** |
-| 7 | Explorer File-Type Icons | LOW | LOW | ✅ **DONE** |
+### 1. レイアウト設定
+- 設定画面からターミナルレイアウトを変更可能
+- デフォルトは横並び（水平分割）
 
----
+### 2. レイアウトオプション
 
-## ✅ Completed Features
+| オプション | 2ターミナル時の表示 |
+|------------|---------------------|
+| **Horizontal** (デフォルト) | `■|■` 横並び |
+| **Vertical** | `■/■` 縦並び |
+| **Auto** | 画面比率に応じて自動 |
 
-### 1. Web Mode Crash Fix
-- Hybrid API layer for Electron/Web compatibility
-- API endpoints for workspaces and file system
-
-### 2. Terminal Layout System
-- CSS Grid automatic layout (1→2→3→4+ terminals)
-- Drag & drop to rearrange terminals
-- Split controls (⬌ horizontal, ⬍ vertical)
-
-### 3. Explorer Type Grouping
-- Collapsible groups when sorting by "Type"
-- Groups: Folders, TypeScript, JavaScript, Config, Images, etc.
-
-### 4. Explorer Breadcrumb Navigation
-- Path shown as clickable segments: 🏠 › Users › ... › folder
-- Click any segment to navigate
-
-### 5. Explorer Keyboard Navigation
-- ↑/↓: Navigate files
-- Enter: Open file/folder
-- Backspace: Go up one directory
-- / or Ctrl+F: Focus filter
-
-### 6. File-Type Icons
-- TypeScript 🔵, JavaScript 🟡, Python 🐍, Rust 🦀, Go 🐹
-- Markdown 📝, JSON ⚙️, CSS 🎨, HTML 🌐, Images 🖼
+### 3. ドラッグ&ドロップでの配置変更
+- ターミナルセルをドラッグして別の位置にドロップ
+- 自動的にレイアウトが再配置される
+- 例：横並びの2つを、ドラッグで縦並びに変更
 
 ---
 
-**All tasks completed! 🎉**
+## 🎨 UI設計
+
+### 設定画面
+
+```
+┌─────────────────────────────────┐
+│ Settings                         │
+├─────────────────────────────────┤
+│ Terminal Layout                  │
+│ ○ Horizontal (default)  ■|■     │
+│ ○ Vertical              ■/■     │
+│ ○ Auto (smart)          varies  │
+└─────────────────────────────────┘
+```
+
+### ドラッグ時の挙動
+
+1. **ドロップゾーン表示**
+   - ドラッグ中に対象セルの上下左右にドロップゾーンを表示
+   - ドロップゾーンにホバーするとプレビュー表示
+
+2. **ドロップ時の処理**
+   - 左にドロップ → 左側に配置
+   - 右にドロップ → 右側に配置
+   - 上にドロップ → 上側に配置
+   - 下にドロップ → 下側に配置
+
+---
+
+## 📝 実装計画
+
+### Phase 1: 設定保存
+
+```typescript
+interface TerminalLayoutSettings {
+  defaultLayout: 'horizontal' | 'vertical' | 'auto';
+}
+```
+
+### Phase 2: CSS修正
+
+```css
+/* Horizontal (default) */
+.terminal-grid[data-count="2"][data-layout="horizontal"] {
+  grid-template: 1fr / 1fr 1fr;
+}
+
+/* Vertical */
+.terminal-grid[data-count="2"][data-layout="vertical"] {
+  grid-template: 1fr 1fr / 1fr;
+}
+```
+
+### Phase 3: ドラッグ&ドロップ強化
+
+- ドロップゾーンの可視化
+- ドロップ位置に応じた自動レイアウト
+- カスタムレイアウトの保存
+
+---
+
+## ❓ 確認事項
+
+1. **設定の保存先**: localStorage でOK?
+2. **レイアウト数**: 2つの時だけ設定可能？それとも3つ以上も？
+3. **ドラッグ優先度**: ドラッグで配置変更した場合、設定を上書きする？
+
+---
+
+**進めてよろしいですか？**

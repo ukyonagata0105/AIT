@@ -163,6 +163,7 @@
       <div id="settings-tabs">
         <button class="settings-tab active" data-tab="workspaces">Workspaces</button>
         <button class="settings-tab" data-tab="appearance">Appearance</button>
+        <button class="settings-tab" data-tab="terminal">Terminal</button>
       </div>
       <div id="settings-body">
         <!-- Workspaces tab -->
@@ -191,10 +192,66 @@
               <div class="theme-preview solarized-light"></div>
               <span>Solarized Light</span>
             </div>
+        </section>
+        <!-- Terminal tab -->
+        <section class="settings-section hidden" id="tab-terminal">
+          <h3>Terminal Layout</h3>
+          <p class="settings-desc">Default layout when splitting terminals:</p>
+          <div class="layout-options">
+            <label class="layout-option">
+              <input type="radio" name="terminal-layout" value="horizontal" checked>
+              <span class="layout-preview">■|■</span>
+              <span class="layout-label">Horizontal</span>
+            </label>
+            <label class="layout-option">
+              <input type="radio" name="terminal-layout" value="vertical">
+              <span class="layout-preview">■<br>■</span>
+              <span class="layout-label">Vertical</span>
+            </label>
+            <label class="layout-option">
+              <input type="radio" name="terminal-layout" value="auto">
+              <span class="layout-preview">▢</span>
+              <span class="layout-label">Auto</span>
+            </label>
+          </div>
+          
+          <h3 style="margin-top: 20px;">Font Size</h3>
+          <p class="settings-desc">Terminal font size (px):</p>
+          <div class="font-size-control">
+            <button type="button" id="font-size-decrease" class="font-btn">−</button>
+            <span id="font-size-display">13</span>
+            <button type="button" id="font-size-increase" class="font-btn">+</button>
+          </div>
+          
+          <h3 style="margin-top: 20px;">Scrollback</h3>
+          <p class="settings-desc">Terminal history lines:</p>
+          <div class="scrollback-options">
+            <label class="scrollback-option">
+              <input type="radio" name="scrollback" value="50">
+              <span>50</span>
+            </label>
+            <label class="scrollback-option">
+              <input type="radio" name="scrollback" value="100" checked>
+              <span>100</span>
+            </label>
+            <label class="scrollback-option">
+              <input type="radio" name="scrollback" value="500">
+              <span>500</span>
+            </label>
+            <label class="scrollback-option">
+              <input type="radio" name="scrollback" value="1000">
+              <span>1K</span>
+            </label>
+            <label class="scrollback-option">
+              <input type="radio" name="scrollback" value="5000">
+              <span>5K</span>
+            </label>
+            <label class="scrollback-option">
+              <input type="radio" name="scrollback" value="10000">
+              <span>10K</span>
+            </label>
           </div>
         </section>
-        </section>
-      </div>
     </div>
   </div>
 

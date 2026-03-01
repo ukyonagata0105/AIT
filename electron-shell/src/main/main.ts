@@ -63,6 +63,7 @@ function getNetworkIps(): string[] {
     return ips;
 }
 function createWindow() {
+    console.log('[createWindow] Starting...');
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -78,10 +79,20 @@ function createWindow() {
         },
     });
 
+    console.log('[createWindow] BrowserWindow created');
+
     // __dirname = dist/main/ → ../renderer/ = dist/renderer/
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    
+    // Handle load errors
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        console.error('[Window] Load failed:', errorCode, errorDescription);
+    });
+    
     // Always open DevTools for debugging during development
     mainWindow.webContents.openDevTools({ mode: 'detach' });
+    
+    console.log('[createWindow] Done');
 }
 
 // ─── Webview Interception ────────────────────────────────────────────────────
@@ -367,8 +378,23 @@ if (isWebMode) {
 } else {
     // Normal Electron mode - also start web server for remote access
     app.whenReady().then(() => {
+        console.log('[App] Ready, creating window...');
         deployGlobalSkills();
         createWindow();
+        
+        // Request folder access permissions for all workspaces
+        if (process.platform === 'darwin') {
+            const workspaces = loadWorkspaces();
+            for (const ws of workspaces) {
+                try {
+                    // Try to read the directory - this triggers macOS permission dialog
+                    fs.readdirSync(ws.path);
+                    console.log(`[Permission] Granted for: ${ws.path}`);
+                } catch (e: any) {
+                    console.log(`[Permission] Denied or error for ${ws.path}:`, e.message);
+                }
+            }
+        }
     
         // Start web server in normal mode too (for remote access)
         try {
