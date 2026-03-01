@@ -78,6 +78,14 @@ function initWebSocket(): Promise<void> {
         webSocket.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
+                
+                // Handle 'sync' message - connected to existing PTY
+                if (msg.type === 'sync') {
+                    wsWatchPtyId = msg.ptyId;
+                    activePtyId = msg.ptyId;
+                    console.log('[WebMode] Synced with local PTY:', msg.ptyId, 'sessions:', msg.sessions);
+                }
+                
                 wsMessageHandlers.forEach(handler => handler(msg));
             } catch (e) {
                 console.error('[WebMode] Error parsing WebSocket message:', e);
@@ -1298,7 +1306,8 @@ function createTerminalTab(cwd: string): TerminalTab {
         title: 'Terminal',
         term,
         fitAddon,
-        ptyId,  // Always use new PTY ID (remote control)
+        // In web mode with existing PTY, use that instead of creating new one
+        ptyId: (!isElectron && wsWatchPtyId) ? wsWatchPtyId : ptyId,
         container,
         cell: undefined
     };
@@ -1313,8 +1322,16 @@ function createTerminalTab(cwd: string): TerminalTab {
         try {
             fitAddon.fit();
             const { cols, rows } = term;
-            // Always call ptyCreate - in web mode it sends command to local machine
-            api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
+            if (isElectron) {
+                // Electron mode: always create new PTY
+                api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
+            } else if (wsWatchPtyId) {
+                // Web mode with existing PTY: just use it, don't create new one
+                console.log('[WebMode] Using synced PTY:', tab.ptyId);
+            } else {
+                // Web mode without existing PTY: create new one
+                api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
+            }
         } catch (e) {
             console.error('Error creating PTY:', e);
         }

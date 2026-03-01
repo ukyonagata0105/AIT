@@ -131,9 +131,17 @@ export function startWebServer(port: number = 4096): void {
 
         const pty = getPtyManager();
         
+        // Auto-attach to existing PTY if any (sync with Electron)
+        const existingSessions = pty.getSessionIds();
+        if (existingSessions.length > 0) {
+            currentPtyId = existingSessions[0];
+            isSharedSession = true;
+            console.log(`[WebServer] Auto-syncing with existing PTY: ${currentPtyId}`);
+            ws.send(JSON.stringify({ type: 'sync', ptyId: currentPtyId, sessions: existingSessions }));
+        }
+        
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
-
         ws.on('message', (message: string) => {
             try {
                 const msg = JSON.parse(message);
