@@ -40,14 +40,8 @@ function saveWorkspaces(workspaces: WorkspaceConfig[]) {
 let mainWindow: BrowserWindow | null = null;
 const ptyManager = new PtyManager();
 
-// Track active PTY for web sharing
-let activePtyId: string | null = null;
-
 // Export for web server to share PTY sessions
-export { ptyManager, activePtyId };
-
-
-
+export { ptyManager };
 // Server status tracking
 let serverStatus = {
     running: false,
@@ -131,7 +125,6 @@ ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; col
     // Auto-deploy skills from ~/.ai-terminal-ide/skills.json to this workspace
     deploySkillsToWorkspace(args.cwd);
     ptyManager.create(args.id, args.cwd, args.cols, args.rows);
-    activePtyId = args.id;  // Track active PTY for web sharing
     return { ok: true };
 });
 
@@ -254,17 +247,6 @@ ipcMain.handle('server:getStatus', async () => {
     };
 });
 
-// Server: get status and IP address
-ipcMain.handle('server:getStatus', async () => {
-    return {
-        running: serverStatus.running,
-        port: webPort,
-        localIp: 'localhost',
-        networkIps: serverStatus.networkIps,
-        error: serverStatus.error
-    };
-});
-
 // Shell: open file in system default application
 ipcMain.handle('shell:openExternal', async (_event, filePath: string) => {
     await shell.openPath(filePath);
@@ -322,79 +304,8 @@ ipcMain.handle('shell:showContextMenu', async (event, filePath: string, isDir: b
     
     const menu = Menu.buildFromTemplate(template);
     menu.popup({ window: win });
+    
     return { action: 'shown' };
-    });
-
-// ─── Browser Panel IPC (for MCP) ─────────────────────────────────────────────
-
-// Browser: navigate to URL
-ipcMain.handle('browser:navigate', async (_event, url: string) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('browser:doNavigate', url);
-        return { ok: true, url };
-    }
-    return { ok: false, error: 'No main window' };
-});
-
-// Browser: take screenshot
-ipcMain.handle('browser:screenshot', async () => {
-    return new Promise((resolve) => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-            resolve({ ok: false, error: 'No main window' });
-            return;
-        }
-        const handler = (_event: any, result: { ok: boolean; data?: string; error?: string }) => {
-            ipcMain.removeListener('browser:screenshotResult', handler);
-            resolve(result);
-        };
-        ipcMain.on('browser:screenshotResult', handler);
-        mainWindow.webContents.send('browser:doScreenshot');
-        // Timeout after 10 seconds
-        setTimeout(() => {
-            ipcMain.removeListener('browser:screenshotResult', handler);
-            resolve({ ok: false, error: 'Screenshot timeout' });
-        }, 10000);
-    });
-});
-
-// Browser: click element
-ipcMain.handle('browser:click', async (_event, selector: string) => {
-    return new Promise((resolve) => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-            resolve({ ok: false, error: 'No main window' });
-            return;
-        }
-        const handler = (_event: any, result: { ok: boolean; error?: string }) => {
-            ipcMain.removeListener('browser:clickResult', handler);
-            resolve(result);
-        };
-        ipcMain.on('browser:clickResult', handler);
-        mainWindow.webContents.send('browser:doClick', selector);
-        setTimeout(() => {
-            ipcMain.removeListener('browser:clickResult', handler);
-            resolve({ ok: false, error: 'Click timeout' });
-        }, 10000);
-    });
-});
-
-// Browser: get DOM
-ipcMain.handle('browser:getDom', async () => {
-    return new Promise((resolve) => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-            resolve({ ok: false, error: 'No main window' });
-            return;
-        }
-        const handler = (_event: any, result: { ok: boolean; data?: string; error?: string }) => {
-            ipcMain.removeListener('browser:domResult', handler);
-            resolve(result);
-        };
-        ipcMain.on('browser:domResult', handler);
-        mainWindow.webContents.send('browser:doGetDom');
-        setTimeout(() => {
-            ipcMain.removeListener('browser:domResult', handler);
-            resolve({ ok: false, error: 'Get DOM timeout' });
-        }, 10000);
-    });
 });
 
 
@@ -454,10 +365,8 @@ const webPort = parseInt(process.argv.find(a => a.startsWith('--port='))?.split(
 if (isWebMode) {
     // Web server mode - no Electron window
     app.whenReady().then(() => {
-        deployGlobalSkills();
-        
         // Start web server
-        setSharedPtyManager(ptyManager);  // Share PTY with web server
+        setSharedPtyManager(ptyManager);
         startWebServer(webPort);
         
         // Start Playwright ALT MCP Server
@@ -492,7 +401,7 @@ if (isWebMode) {
         try {
             serverStatus.running = true;
             serverStatus.networkIps = getNetworkIps();
-            setSharedPtyManager(ptyManager);  // Share PTY with web server
+            setSharedPtyManager(ptyManager);
             startWebServer(webPort);
         } catch (e: any) {
             serverStatus.running = false;

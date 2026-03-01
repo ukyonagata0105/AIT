@@ -4,13 +4,9 @@ import * as path from 'path';
 import * as os from 'os';
 import { PtyManager } from './ptyManager';
 
-// Default PTY manager - will be replaced with shared instance if set
+// Shared PTY manager - set from main process
 let sharedPtyManager: PtyManager | null = null;
 
-/**
- * Set the shared PTY manager from main process.
- * This allows web server to use the same PTY sessions as Electron window.
- */
 export function setSharedPtyManager(pm: PtyManager): void {
     sharedPtyManager = pm;
 }
@@ -97,13 +93,6 @@ export function startWebServer(port: number = 4096): void {
             res.status(500).json({ error: 'Failed to read file' });
         }
     });
-
-    // API endpoint to get active PTY sessions (for sharing with web)
-    app.get('/api/pty/list', (req, res) => {
-        const pty = getPtyManager();
-        const activeIds = pty.getSessionIds();
-        res.json({ sessions: activeIds });
-    });
     
     // SPA fallback - serve index.html for all routes
     app.use((req, res) => {
@@ -118,19 +107,6 @@ export function startWebServer(port: number = 4096): void {
         console.log('[WebServer] Client connected');
         
         let currentPtyId: string | null = null;
-        let isWatcher = false;
-        
-        // Get PTY manager
-        const pty = getPtyManager();
-        
-        // Auto-attach to existing PTY if any (for sharing with Electron)
-        const existingSessions = pty.getSessionIds();
-        if (existingSessions.length > 0) {
-            currentPtyId = existingSessions[0];
-            isWatcher = true;
-            console.log(`[WebServer] Auto-attaching to existing PTY: ${currentPtyId}`);
-            ws.send(JSON.stringify({ type: 'attached', id: currentPtyId }));
-        }
         
         // Forward PTY data to client
         const dataHandler = (id: string, data: string) => {
@@ -145,6 +121,8 @@ export function startWebServer(port: number = 4096): void {
             }
         };
         
+        const pty = getPtyManager();
+        
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
         
@@ -155,30 +133,20 @@ export function startWebServer(port: number = 4096): void {
                 switch (msg.type) {
                     case 'create':
                         currentPtyId = msg.id;
-                        isWatcher = false;
                         pty.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
                         break;
-                        
-                    case 'watch':
-                        currentPtyId = msg.id;
-                        isWatcher = true;
-                        console.log(`[WebServer] Client watching PTY: ${msg.id}`);
-                        break;
-                        
                     case 'input':
-                        if (msg.id && !isWatcher) {
+                        if (msg.id) {
                             pty.write(msg.id, msg.data);
                         }
                         break;
-                        
                     case 'resize':
-                        if (msg.id && !isWatcher) {
+                        if (msg.id) {
                             pty.resize(msg.id, msg.cols, msg.rows);
                         }
                         break;
-                        
                     case 'kill':
-                        if (msg.id && !isWatcher) {
+                        if (msg.id) {
                             pty.kill(msg.id);
                         }
                         break;
@@ -192,7 +160,7 @@ export function startWebServer(port: number = 4096): void {
             console.log('[WebServer] Client disconnected');
             pty.off('data', dataHandler);
             pty.off('exit', exitHandler);
-            if (currentPtyId && !isWatcher) {
+            if (currentPtyId) {
                 pty.kill(currentPtyId);
             }
         });

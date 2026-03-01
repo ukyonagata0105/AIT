@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.send('pty:resize', args),
     ptyKill: (args: { id: string }) =>
         ipcRenderer.send('pty:kill', args),
-    ptyGetActiveId: () => ipcRenderer.invoke('pty:getActiveId'),
     onPtyData: (callback: (args: { id: string; data: string }) => void) => {
         ipcRenderer.on('pty:data', (_event, args) => callback(args));
     },
@@ -43,36 +42,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Shell operations
     shellOpenExternal: (filePath: string) => ipcRenderer.invoke('shell:openExternal', filePath),
-    shellShowContextMenu: (filePath: string, isDir: boolean) => ipcRenderer.invoke('shell:showContextMenu', filePath, isDir),
-
-    // Browser panel operations (for MCP)
-    browserNavigate: (url: string) => ipcRenderer.invoke('browser:navigate', url),
-    browserScreenshot: () => ipcRenderer.invoke('browser:screenshot'),
-    browserClick: (selector: string) => ipcRenderer.invoke('browser:click', selector),
-    browserGetDom: () => ipcRenderer.invoke('browser:getDom'),
-
-    // Browser panel events (sent from main to renderer)
-    onBrowserNavigate: (callback: (url: string) => void) => {
-        ipcRenderer.on('browser:doNavigate', (_event, url) => callback(url));
-    },
-    onBrowserScreenshot: (callback: () => void) => {
-        ipcRenderer.on('browser:doScreenshot', () => callback());
-    },
-    onBrowserClick: (callback: (selector: string) => void) => {
-        ipcRenderer.on('browser:doClick', (_event, selector) => callback(selector));
-    },
-    onBrowserGetDom: (callback: () => void) => {
-        ipcRenderer.on('browser:doGetDom', () => callback());
-    },
-
-    // Browser panel result senders (renderer -> main)
-    sendScreenshotResult: (result: { ok: boolean; data?: string; error?: string }) => {
-        ipcRenderer.send('browser:screenshotResult', result);
-    },
-    sendClickResult: (result: { ok: boolean; error?: string }) => {
-        ipcRenderer.send('browser:clickResult', result);
-    },
-    sendDomResult: (result: { ok: boolean; data?: string; error?: string }) => {
-        ipcRenderer.send('browser:domResult', result);
-    }
+    shellShowContextMenu: (filePath: string, isDir: boolean) => ipcRenderer.invoke('shell:showContextMenu', filePath, isDir)
 });
