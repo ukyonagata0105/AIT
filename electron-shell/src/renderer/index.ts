@@ -173,16 +173,24 @@ const api = {
         return { ok: true };
     },
     ptyInput: (args: { id: string; data: string }) => {
-        if (isElectron) window.electronAPI!.ptyInput(args);
-        // Web mode: don't send input - we're just watching Electron's terminal
+        if (isElectron) {
+            window.electronAPI!.ptyInput(args);
+        } else {
+            // Web mode: send input to shared PTY via WebSocket
+            wsSend({ type: 'input', id: args.id, data: args.data });
+        }
     },
     ptyResize: (args: { id: string; cols: number; rows: number }) => {
-        if (isElectron) window.electronAPI!.ptyResize(args);
-        // Web mode: don't resize - we're just watching
+        if (isElectron) {
+            window.electronAPI!.ptyResize(args);
+        } else {
+            // Web mode: resize shared PTY
+            wsSend({ type: 'resize', id: args.id, cols: args.cols, rows: args.rows });
+        }
     },
     ptyKill: (args: { id: string }) => {
+        // Don't kill in web mode - it's shared with Electron
         if (isElectron) window.electronAPI!.ptyKill(args);
-        // Web mode: don't kill - we're just watching
     },
     onPtyData: (cb: (a: { id: string; data: string }) => void) => {
         if (isElectron) {
@@ -305,6 +313,7 @@ let wsBarCollapsed = false;
 let activeTerm: Terminal | null = null;
 let activeFitAddon: FitAddon | null = null;
 let activePtyId: string | null = null;
+let ctxTargetWsId: string | null = null;
 
 // Terminal layout settings (shared with web mode via localStorage)
 type TerminalLayoutMode = 'horizontal' | 'vertical' | 'auto';
@@ -1064,7 +1073,7 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
     cell.appendChild(dropZones);
 
     // Drag events
-    header.addEventListener('dragstart', (e) => {
+    header.addEventListener('dragstart', (e: DragEvent) => {
         cell.classList.add('dragging');
         e.dataTransfer?.setData('text/plain', tab.id);
         // Show drop zones on all cells
@@ -1117,7 +1126,7 @@ function createTerminalCell(tab: TerminalTab): HTMLElement {
         cell.classList.remove('drag-over');
     });
 
-    cell.addEventListener('drop', (e) => {
+    cell.addEventListener('drop', (e: DragEvent) => {
         e.preventDefault();
         cell.classList.remove('drag-over');
         const draggedId = e.dataTransfer?.getData('text/plain');
@@ -1263,6 +1272,16 @@ function renderTerminalTabs() {
     });
 }
 
+function refreshTerminal() {
+    if (activeFitAddon) {
+        try {
+            activeFitAddon.fit();
+        } catch (e) {
+            console.warn('Failed to fit terminal:', e);
+        }
+    }
+}
+
 function switchTerminalTab(tabId: string) {
     const tabs = workspaceTerminals.get(activeWorkspaceId!) || [];
     const tab = tabs.find(t => t.id === tabId);
@@ -1329,7 +1348,8 @@ function createTerminalTab(cwd: string): TerminalTab {
         title: 'Terminal',
         term,
         fitAddon,
-        ptyId,
+        // In web mode, use the shared PTY ID immediately
+        ptyId: (!isElectron && wsWatchPtyId) ? wsWatchPtyId : ptyId,
         container,
         cell: undefined
     };
@@ -1344,12 +1364,11 @@ function createTerminalTab(cwd: string): TerminalTab {
         try {
             fitAddon.fit();
             const { cols, rows } = term;
-            // In web mode, don't create new PTY - we'll watch Electron's PTY
-            if (!isElectron && wsWatchPtyId) {
-                console.log('[WebMode] Using existing PTY:', wsWatchPtyId);
-                tab.ptyId = wsWatchPtyId;  // Use the watched PTY ID
+            // In web mode, don't create new PTY - we're sharing Electron's PTY
+            if (isElectron) {
+                api.ptyCreate({ id: tab.ptyId, cwd, cols, rows });
             } else {
-                api.ptyCreate({ id: ptyId, cwd, cols, rows });
+                console.log('[WebMode] Using shared PTY:', tab.ptyId);
             }
         } catch (e) {
             console.error('Error creating PTY:', e);
@@ -1358,9 +1377,9 @@ function createTerminalTab(cwd: string): TerminalTab {
 
 
     term.onData((data) => {
-        // In web mode, don't send input - we're just watching Electron's terminal
-        if (isElectron && activePtyId === ptyId) {
-            api.ptyInput({ id: ptyId, data });
+        // Send input using the tab's PTY ID (works for both Electron and Web mode)
+        if (activePtyId === tab.ptyId) {
+            api.ptyInput({ id: tab.ptyId, data });
         }
     });
 
