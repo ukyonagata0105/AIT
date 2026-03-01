@@ -302,10 +302,78 @@ ipcMain.handle('shell:showContextMenu', async (event, filePath: string, isDir: b
         }
     ];
     
-    const menu = Menu.buildFromTemplate(template);
-    menu.popup({ window: win });
-    
     return { action: 'shown' };
+});
+
+// ─── Browser Panel IPC (for MCP) ─────────────────────────────────────────────
+
+// Browser: navigate to URL
+ipcMain.handle('browser:navigate', async (_event, url: string) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('browser:doNavigate', url);
+        return { ok: true, url };
+    }
+    return { ok: false, error: 'No main window' };
+});
+
+// Browser: take screenshot
+ipcMain.handle('browser:screenshot', async () => {
+    return new Promise((resolve) => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+            resolve({ ok: false, error: 'No main window' });
+            return;
+        }
+        const handler = (_event: any, result: { ok: boolean; data?: string; error?: string }) => {
+            ipcMain.removeListener('browser:screenshotResult', handler);
+            resolve(result);
+        };
+        ipcMain.on('browser:screenshotResult', handler);
+        mainWindow.webContents.send('browser:doScreenshot');
+        setTimeout(() => {
+            ipcMain.removeListener('browser:screenshotResult', handler);
+            resolve({ ok: false, error: 'Screenshot timeout' });
+        }, 10000);
+    });
+});
+
+// Browser: click element
+ipcMain.handle('browser:click', async (_event, selector: string) => {
+    return new Promise((resolve) => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+            resolve({ ok: false, error: 'No main window' });
+            return;
+        }
+        const handler = (_event: any, result: { ok: boolean; error?: string }) => {
+            ipcMain.removeListener('browser:clickResult', handler);
+            resolve(result);
+        };
+        ipcMain.on('browser:clickResult', handler);
+        mainWindow.webContents.send('browser:doClick', selector);
+        setTimeout(() => {
+            ipcMain.removeListener('browser:clickResult', handler);
+            resolve({ ok: false, error: 'Click timeout' });
+        }, 10000);
+    });
+});
+
+// Browser: get DOM
+ipcMain.handle('browser:getDom', async () => {
+    return new Promise((resolve) => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+            resolve({ ok: false, error: 'No main window' });
+            return;
+        }
+        const handler = (_event: any, result: { ok: boolean; data?: string; error?: string }) => {
+            ipcMain.removeListener('browser:domResult', handler);
+            resolve(result);
+        };
+        ipcMain.on('browser:domResult', handler);
+        mainWindow.webContents.send('browser:doGetDom');
+        setTimeout(() => {
+            ipcMain.removeListener('browser:domResult', handler);
+            resolve({ ok: false, error: 'Get DOM timeout' });
+        }, 10000);
+    });
 });
 
 
