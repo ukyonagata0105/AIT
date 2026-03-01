@@ -1,0 +1,44 @@
+{
+    "name": "ai-terminal-ide",
+    "version": "0.1.0",
+    "description": "AI-Native Terminal-First IDE — Custom Electron Shell",
+    "main": "dist/main/main.js",
+    "scripts": {
+        "dev": "concurrently \"npm run build:watch\" \"npm run electron:dev\"",
+        "build": "npm run build:main && npm run build:preload && npm run build:renderer && npm run copy:html",
+        "build:main": "esbuild src/main/main.ts src/main/ptyManager.ts src/main/webServer.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --external:@modelcontextprotocol/sdk --external:axios --external:express --external:ws --outdir=dist/main --format=cjs --sourcemap",
+        "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --external:electron --external:playwright-core --external:@modelcontextprotocol/sdk --external:axios --outdir=dist/main --format=cjs --sourcemap",
+        "build:renderer": "esbuild src/renderer/index.ts --bundle --platform=browser --outdir=dist/renderer --sourcemap --loader:.css=css",
+        "copy:html": "cp src/renderer/index.html dist/renderer/index.html",
+        "build:watch": "concurrently \"npm run build:main -- --watch\" \"npm run build:preload -- --watch\" \"npm run build:renderer -- --watch\"",
+        "electron:dev": "wait-on dist/main/main.js && cross-env NODE_ENV=development electron .",
+        "start": "npm run build && electron .",
+        "start:web": "npm run build && electron . --web",
+        "test": "npm run build && playwright test",
+        "test:headed": "npm run build && playwright test --headed"
+    },
+    "devDependencies": {
+        "@electron/rebuild": "^4.0.3",
+        "@playwright/test": "^1.58.2",
+        "@types/express": "^5.0.6",
+        "@types/node": "^20.0.0",
+        "@types/ws": "^8.5.0",
+        "concurrently": "^8.0.0",
+        "cross-env": "^7.0.0",
+        "electron": "^29.0.0",
+        "esbuild": "^0.20.0",
+        "playwright": "^1.58.2",
+        "typescript": "^5.0.0",
+        "wait-on": "^7.0.0"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.27.1",
+        "@xterm/addon-fit": "^0.10.0",
+        "@xterm/addon-web-links": "^0.11.0",
+        "@xterm/xterm": "^5.3.0",
+        "axios": "^1.13.5",
+        "node-pty": "^1.0.0",
+        "playwright-core": "^1.58.2",
+        "ws": "^8.19.0"
+    }
+}

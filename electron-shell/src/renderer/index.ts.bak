@@ -1,0 +1,776 @@
+import './index.css';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import '@xterm/xterm/css/xterm.css';
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface Workspace {
+    id: string;
+    name: string;
+    path: string;
+    color?: string;
+}
+
+declare const window: Window & {
+    electronAPI: {
+        ptyCreate: (a: { id: string; cwd: string; cols: number; rows: number }) => Promise<{ ok: boolean }>;
+        ptyInput: (a: { id: string; data: string }) => void;
+        ptyResize: (a: { id: string; cols: number; rows: number }) => void;
+        ptyKill: (a: { id: string }) => void;
+        onPtyData: (cb: (a: { id: string; data: string }) => void) => void;
+        onPtyExit: (cb: (a: { id: string; exitCode: number }) => void) => void;
+        workspacesLoad: () => Promise<Workspace[]>;
+        workspacesSave: (ws: Workspace[]) => Promise<{ ok: boolean }>;
+        workspacesAdd: () => Promise<Workspace | null>;
+        workspacesRename: (id: string, name: string) => Promise<{ ok: boolean }>;
+        workspacesDelete: (id: string) => Promise<{ ok: boolean }>;
+        fsReadDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>;
+        fsReadFile: (path: string) => Promise<string>;
+        execRun: (cmd: string) => Promise<{ stdout: string; stderr: string }>;
+        extSearch: (query: string) => Promise<any>;
+    };
+};
+
+// ─── State ──────────────────────────────────────────────────────────────────
+
+let workspaces: Workspace[] = [];
+let activeWorkspaceId: string | null = null;
+let activeTerm: Terminal | null = null;
+let activeFitAddon: FitAddon | null = null;
+let activePtyId: string | null = null;
+let ctxTargetWsId: string | null = null;
+let wsBarCollapsed = false;
+let currentTheme = localStorage.getItem('theme') || 'dark';
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+
+const workspaceBar = document.getElementById('workspace-bar')!;
+const workspaceList = document.getElementById('workspace-list')!;
+const addBtn = document.getElementById('workspace-add-btn')!;
+const collapseBtn = document.getElementById('ws-collapse-btn')!;
+const settingsBtn = document.getElementById('settings-btn')!;
+const workspaceHeading = document.getElementById('workspace-heading')!;
+const terminalPaneEl = document.getElementById('terminal-pane')!;
+const emptyState = document.getElementById('empty-state')!;
+const broadcastToggle = document.getElementById('broadcast-toggle') as HTMLInputElement;
+const explorerTree = document.getElementById('explorer-tree')!;
+const explorerTitle = document.getElementById('explorer-title')!;
+const viewerContent = document.getElementById('viewer-content')!;
+const viewerFilepath = document.getElementById('viewer-filepath')!;
+const ctxMenu = document.getElementById('ws-context-menu')!;
+const ctxRename = document.getElementById('ctx-rename')!;
+const ctxDelete = document.getElementById('ctx-delete')!;
+const settingsOverlay = document.getElementById('settings-overlay')!;
+const settingsClose = document.getElementById('settings-close')!;
+const settingsWsList = document.getElementById('settings-ws-list')!;
+const settingsAddWs = document.getElementById('settings-add-ws')!;
+const extSearch = document.getElementById('ext-search') as HTMLInputElement;
+const extInstallBtn = document.getElementById('ext-install-btn')!;
+const extStatus = document.getElementById('ext-status')!;
+const extList = document.getElementById('ext-list')!;;
+
+// ─── Top Bar ─────────────────────────────────────────────────────────────────
+
+collapseBtn.addEventListener('click', () => {
+    wsBarCollapsed = !wsBarCollapsed;
+    workspaceBar.classList.toggle('collapsed', wsBarCollapsed);
+    collapseBtn.textContent = wsBarCollapsed ? '▶' : '◀';
+    refreshTerminal();
+});
+
+settingsBtn.addEventListener('click', () => {
+    renderSettingsPanel();
+    settingsOverlay.classList.remove('hidden');
+    loadExtensions();
+});
+
+// Settings tab switching
+document.querySelectorAll('.settings-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tab = (btn as HTMLElement).dataset.tab!;
+        document.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.settings-section').forEach(s => s.classList.add('hidden'));
+        document.getElementById(`tab-${tab}`)?.classList.remove('hidden');
+    });
+});
+
+settingsClose.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
+settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden');
+});
+
+// ─── Theme System ─────────────────────────────────────────────────────────────
+
+interface Theme {
+    background: string; foreground: string;
+    black: string; red: string; green: string; yellow: string;
+    blue: string; magenta: string; cyan: string; white: string;
+    brightBlack: string; brightRed: string; brightGreen: string; brightYellow: string;
+    brightBlue: string; brightMagenta: string; brightCyan: string; brightWhite: string;
+    cursor: string; selectionBackground: string;
+}
+
+const THEMES: Record<string, Theme> = {
+    'dark': {
+        background: '#1a1a1a', foreground: '#d4d4d4',
+        black: '#1a1a1a', red: '#f38ba8', green: '#a6e3a1', yellow: '#f9e2af',
+        blue: '#89b4fa', magenta: '#cba6f7', cyan: '#89dceb', white: '#cdd6f4',
+        brightBlack: '#585b70', brightRed: '#f38ba8', brightGreen: '#a6e3a1', brightYellow: '#f9e2af',
+        brightBlue: '#89b4fa', brightMagenta: '#cba6f7', brightCyan: '#89dceb', brightWhite: '#a6adc8',
+        cursor: '#cdd6f4', selectionBackground: '#45475a',
+    },
+    'tokyo-night': {
+        background: '#1a1b26', foreground: '#a9b1d6',
+        black: '#1a1b26', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
+        blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+        brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a', brightYellow: '#e0af68',
+        brightBlue: '#7aa2f7', brightMagenta: '#bb9af7', brightCyan: '#7dcfff', brightWhite: '#c0caf5',
+        cursor: '#c0caf5', selectionBackground: '#33467C',
+    },
+    'light': {
+        background: '#ffffff', foreground: '#333333',
+        black: '#000000', red: '#cd3131', green: '#00bc00', yellow: '#949800',
+        blue: '#0451a5', magenta: '#bc05bc', cyan: '#0598bc', white: '#555555',
+        brightBlack: '#666666', brightRed: '#cd3131', brightGreen: '#14e314', brightYellow: '#b5ba00',
+        brightBlue: '#0451a5', brightMagenta: '#bc05bc', brightCyan: '#0598bc', brightWhite: '#a5a5a5',
+        cursor: '#333333', selectionBackground: '#add6ff',
+    },
+    'solarized-light': {
+        background: '#fdf6e3', foreground: '#657b83',
+        black: '#073642', red: '#dc322f', green: '#859900', yellow: '#b58900',
+        blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5',
+        brightBlack: '#002b36', brightRed: '#cb4b16', brightGreen: '#586e75', brightYellow: '#657b83',
+        brightBlue: '#839496', brightMagenta: '#6c71c4', brightCyan: '#93a1a1', brightWhite: '#fdf6e3',
+        cursor: '#657b83', selectionBackground: '#eee8d5',
+    }
+};
+
+function applyTheme(themeId: string) {
+    currentTheme = themeId;
+    document.documentElement.setAttribute('data-theme', themeId);
+    localStorage.setItem('theme', themeId);
+
+    // Update active terminal theme if any
+    if (activeTerm) {
+        activeTerm.options.theme = THEMES[themeId];
+    }
+
+    // Update theme card UI
+    document.querySelectorAll('.theme-card').forEach(card => {
+        card.classList.toggle('active', (card as HTMLElement).dataset.theme === themeId);
+    });
+}
+
+document.querySelectorAll('.theme-card').forEach(card => {
+    card.addEventListener('click', () => {
+        applyTheme((card as HTMLElement).dataset.theme!);
+    });
+});
+
+// ─── Workspace Bar ────────────────────────────────────────────────────────────
+
+function getInitials(name: string) { return name.substring(0, 2).toUpperCase(); }
+
+const PRESET_COLORS = [
+    '#5865F2', '#57F287', '#FEE75C', '#ED4245', '#EB459E', '#FF8C00', '#00B0F4', // Discord
+    '#F28C28', '#A020F0', '#00FF00', '#FF00FF', '#00FFFF', '#FFD700', '#FF4500', // Bright
+    '#89b4fa', '#a6e3a1', '#f9e2af', '#f38ba8', '#cba6f7', '#fab387', '#94e2d5', // Catppuccin
+    '#74c7ec', '#89dceb', '#b4befe'
+];
+
+function getColor(id: string): string {
+    let h = 0;
+    for (const c of id) h = (h << 5) - h + c.charCodeAt(0);
+    return PRESET_COLORS[Math.abs(h) % PRESET_COLORS.length];
+}
+
+function resolveColor(ws: Workspace) { return ws.color || getColor(ws.id); }
+
+function renderWorkspaceBar() {
+    workspaceList.innerHTML = '';
+    for (const ws of workspaces) {
+        const item = document.createElement('div');
+        item.className = 'workspace-item' + (ws.id === activeWorkspaceId ? ' active' : '');
+        item.title = ws.path;
+
+        const icon = document.createElement('div');
+        icon.className = 'workspace-icon';
+        icon.style.backgroundColor = resolveColor(ws);
+        icon.textContent = getInitials(ws.name);
+        item.appendChild(icon);
+
+        const lbl = document.createElement('span');
+        lbl.className = 'workspace-label';
+        lbl.textContent = ws.name;
+        item.appendChild(lbl);
+
+        item.addEventListener('click', () => switchWorkspace(ws.id));
+        item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            ctxTargetWsId = ws.id;
+            showContextMenu(e.clientX, e.clientY);
+        });
+        workspaceList.appendChild(item);
+    }
+}
+
+// ─── Context Menu ─────────────────────────────────────────────────────────────
+
+function showContextMenu(x: number, y: number) {
+    ctxMenu.style.left = `${x}px`;
+    ctxMenu.style.top = `${y}px`;
+    ctxMenu.classList.remove('hidden');
+}
+function hideContextMenu() { ctxMenu.classList.add('hidden'); }
+
+window.addEventListener('click', () => hideContextMenu());
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideContextMenu(); settingsOverlay.classList.add('hidden'); } });
+
+ctxRename.addEventListener('click', async () => {
+    hideContextMenu();
+    if (!ctxTargetWsId) return;
+    const ws = workspaces.find(w => w.id === ctxTargetWsId);
+    if (!ws) return;
+    const newName = prompt('Rename workspace:', ws.name);
+    if (!newName || newName === ws.name) return;
+    ws.name = newName;
+    await window.electronAPI.workspacesSave(workspaces);
+    renderWorkspaceBar();
+    if (ws.id === activeWorkspaceId) workspaceHeading.textContent = ws.name;
+});
+
+ctxDelete.addEventListener('click', async () => {
+    hideContextMenu();
+    if (!ctxTargetWsId) return;
+    await deleteWorkspace(ctxTargetWsId);
+});
+
+async function deleteWorkspace(wsId: string) {
+    const ws = workspaces.find(w => w.id === wsId);
+    if (!ws || !confirm(`Remove workspace "${ws.name}"?`)) return;
+
+    if (wsId === activeWorkspaceId && activePtyId) {
+        window.electronAPI.ptyKill({ id: activePtyId });
+        activePtyId = null;
+        activeTerm?.dispose();
+        activeTerm = null;
+        activeFitAddon = null;
+        terminalPaneEl.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        activeWorkspaceId = null;
+        workspaceHeading.textContent = '';
+    }
+    workspaces = workspaces.filter(w => w.id !== wsId);
+    await window.electronAPI.workspacesSave(workspaces);
+    renderWorkspaceBar();
+    renderSettingsPanel();
+    if (workspaces.length > 0 && !activeWorkspaceId) switchWorkspace(workspaces[0].id);
+}
+
+// ─── Settings Panel ───────────────────────────────────────────────────────────
+
+function renderSettingsPanel() {
+    settingsWsList.innerHTML = '';
+    for (const ws of workspaces) {
+        const row = document.createElement('div');
+        row.className = 'settings-ws-row';
+
+        // Color swatch
+        const colorWrap = document.createElement('div');
+        colorWrap.className = 'settings-ws-color';
+        colorWrap.style.backgroundColor = resolveColor(ws);
+
+        // Color dropdown/grid would be better but let's stick to picker + quick presets
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = resolveColor(ws);
+        colorInput.addEventListener('input', async () => {
+            ws.color = colorInput.value;
+            colorWrap.style.backgroundColor = colorInput.value;
+            await window.electronAPI.workspacesSave(workspaces);
+            renderWorkspaceBar();
+        });
+        colorWrap.appendChild(colorInput);
+        row.appendChild(colorWrap);
+
+        // Preset colors quick set
+        const presetGrid = document.createElement('div');
+        presetGrid.className = 'color-presets';
+        PRESET_COLORS.slice(0, 14).forEach(c => {
+            const p = document.createElement('div');
+            p.className = 'color-dot';
+            p.style.backgroundColor = c;
+            p.onclick = async () => {
+                ws.color = c;
+                colorInput.value = c;
+                colorWrap.style.backgroundColor = c;
+                await window.electronAPI.workspacesSave(workspaces);
+                renderWorkspaceBar();
+            };
+            presetGrid.appendChild(p);
+        });
+        row.appendChild(presetGrid);
+
+        // Name input
+        const nameInput = document.createElement('input');
+        nameInput.className = 'settings-ws-name';
+        nameInput.type = 'text';
+        nameInput.value = ws.name;
+        nameInput.addEventListener('change', async () => {
+            ws.name = nameInput.value.trim() || ws.name;
+            nameInput.value = ws.name;
+            await window.electronAPI.workspacesSave(workspaces);
+            renderWorkspaceBar();
+            if (ws.id === activeWorkspaceId) workspaceHeading.textContent = ws.name;
+        });
+        row.appendChild(nameInput);
+
+        // Path
+        const pathSpan = document.createElement('span');
+        pathSpan.className = 'settings-ws-path';
+        pathSpan.title = ws.path;
+        pathSpan.textContent = ws.path.replace(/^.*\//, '…/');
+        row.appendChild(pathSpan);
+
+        // Delete
+        const delBtn = document.createElement('button');
+        delBtn.className = 'settings-ws-del';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'Remove';
+        delBtn.addEventListener('click', () => deleteWorkspace(ws.id));
+        row.appendChild(delBtn);
+
+        settingsWsList.appendChild(row);
+    }
+}
+
+settingsAddWs.addEventListener('click', async () => {
+    const ws = await window.electronAPI.workspacesAdd();
+    if (ws) {
+        workspaces.push(ws);
+        await window.electronAPI.workspacesSave(workspaces);
+        renderWorkspaceBar();
+        renderSettingsPanel();
+        switchWorkspace(ws.id);
+    }
+});
+
+// ─── Extensions Management ──────────────────────────────────────────────────
+
+async function loadExtensions() {
+    extList.innerHTML = '<div style="padding:10px;color:#666">Loading extensions...</div>';
+    const q = extSearch.value.trim();
+    if (q) {
+        return searchMarketplace(q);
+    }
+
+    try {
+        const { stdout, stderr } = await window.electronAPI.execRun('code --list-extensions');
+        if (stderr && !stdout) {
+            extList.innerHTML = `<div style="padding:10px;color:#f38ba8">Error: ${stderr}</div>`;
+            return;
+        }
+        const ids = stdout.trim().split('\n').filter(id => id.length > 0);
+        extList.innerHTML = '';
+        if (ids.length === 0) {
+            extList.innerHTML = '<div style="padding:10px;color:#666">No extensions found.</div>';
+            return;
+        }
+
+        const title = document.createElement('h4');
+        title.textContent = 'Installed Extensions';
+        title.style.margin = '10px';
+        title.style.fontSize = '12px';
+        title.style.color = '#555';
+        extList.appendChild(title);
+
+        for (const id of ids) {
+            const row = document.createElement('div');
+            row.className = 'ext-row';
+
+            const name = document.createElement('span');
+            name.className = 'ext-name';
+            name.textContent = id;
+            row.appendChild(name);
+
+            const del = document.createElement('button');
+            del.className = 'ext-del-btn';
+            del.textContent = 'Uninstall';
+            del.onclick = () => uninstallExtension(id);
+            row.appendChild(del);
+
+            extList.appendChild(row);
+        }
+    } catch (e) {
+        extList.innerHTML = `<div style="padding:10px;color:#f38ba8">Failed to list extensions. Make sure 'code' CLI is in PATH.</div>`;
+    }
+}
+
+async function searchMarketplace(query: string) {
+    extList.innerHTML = '<div style="padding:10px;color:#666">Searching Marketplace...</div>';
+    try {
+        const response = await window.electronAPI.extSearch(query);
+        const results = response.results[0].extensions;
+        extList.innerHTML = '';
+
+        if (!results || results.length === 0) {
+            extList.innerHTML = '<div style="padding:10px;color:#666">No results found in Marketplace.</div>';
+            return;
+        }
+
+        results.forEach((ext: any) => {
+            const card = document.createElement('div');
+            card.className = 'ext-card';
+
+            const iconVer = ext.versions[0];
+            const iconAsset = iconVer.files.find((f: any) => f.assetType === 'Microsoft.VisualStudio.Services.Icons.Default');
+            const iconUrl = iconAsset ? iconAsset.source : 'https://raw.githubusercontent.com/microsoft/vscode/main/resources/linux/code.png';
+
+            const img = document.createElement('img');
+            img.className = 'ext-card-icon';
+            img.src = iconUrl;
+            card.appendChild(img);
+
+            const info = document.createElement('div');
+            info.className = 'ext-card-info';
+
+            const nameRow = document.createElement('div');
+            nameRow.style.display = 'flex';
+            nameRow.style.alignItems = 'center';
+            nameRow.style.gap = '8px';
+
+            const nameValue = document.createElement('div');
+            nameValue.className = 'ext-card-name';
+            nameValue.textContent = ext.displayName || ext.extensionName;
+            nameRow.appendChild(nameValue);
+
+            // Publisher flags logic (simplified)
+            if (ext.publisher.displayName === 'Microsoft' || (ext.publisher.flags && ext.publisher.flags.includes('verified'))) {
+                const badge = document.createElement('span');
+                badge.textContent = '✓';
+                badge.style.color = 'var(--accent)';
+                badge.style.fontSize = '12px';
+                badge.title = 'Verified Publisher';
+                nameRow.appendChild(badge);
+            }
+            info.appendChild(nameRow);
+
+            const descValue = document.createElement('div');
+            descValue.className = 'ext-card-desc';
+            descValue.textContent = ext.shortDescription || '';
+            info.appendChild(descValue);
+
+            const metaValue = document.createElement('div');
+            metaValue.className = 'ext-card-meta';
+            const extensionId = `${ext.publisher.publisherName}.${ext.extensionName}`;
+
+            const statsValue = document.createElement('span');
+            statsValue.style.marginRight = '8px';
+            const installCount = ext.statistics?.find((s: any) => s.statisticName === 'install')?.value || 0;
+            statsValue.textContent = `★ ${Number(installCount).toLocaleString()} installs`;
+            metaValue.appendChild(statsValue);
+
+            const linkValue = document.createElement('a');
+            linkValue.href = `https://marketplace.visualstudio.com/items?itemName=${extensionId}`;
+            linkValue.textContent = 'View on Marketplace ↗';
+            linkValue.style.color = 'var(--accent)';
+            linkValue.style.textDecoration = 'none';
+            linkValue.style.fontSize = '10px';
+            linkValue.onclick = (e) => {
+                e.preventDefault();
+                window.open(linkValue.href, '_blank');
+            };
+            metaValue.appendChild(linkValue);
+
+            info.appendChild(metaValue);
+            card.appendChild(info);
+
+            const btnValue = document.createElement('button');
+            btnValue.className = 'ext-card-install';
+            btnValue.textContent = 'Install';
+            btnValue.onclick = () => installExtension(extensionId);
+            card.appendChild(btnValue);
+
+            extList.appendChild(card);
+        });
+    } catch (e) {
+        extList.innerHTML = `<div style="padding:10px;color:#f38ba8">Marketplace search failed.</div>`;
+    }
+}
+
+async function installExtension(id: string) {
+    if (!id) return;
+    extStatus.textContent = `Installing ${id}...`;
+    extStatus.style.color = '#89b4fa';
+    extInstallBtn.setAttribute('disabled', 'true');
+    try {
+        const { stderr } = await window.electronAPI.execRun(`code --install-extension ${id}`);
+        if (stderr.toLowerCase().includes('failed') || stderr.toLowerCase().includes('error')) {
+            extStatus.textContent = `Error: ${stderr}`;
+            extStatus.style.color = '#f38ba8';
+        } else {
+            extStatus.textContent = `Successfully installed ${id}.`;
+            extStatus.style.color = '#a6e3a1';
+            extSearch.value = '';
+            loadExtensions();
+        }
+    } catch (e) {
+        extStatus.textContent = `Failed to install ${id}.`;
+        extStatus.style.color = '#f38ba8';
+    } finally {
+        extInstallBtn.removeAttribute('disabled');
+    }
+}
+
+async function uninstallExtension(id: string) {
+    if (!confirm(`Uninstall extension ${id}?`)) return;
+    extStatus.textContent = `Uninstalling ${id}...`;
+    extStatus.style.color = '#89b4fa';
+    try {
+        const { stderr } = await window.electronAPI.execRun(`code --uninstall-extension ${id}`);
+        if (stderr.toLowerCase().includes('failed') || stderr.toLowerCase().includes('error')) {
+            extStatus.textContent = `Error: ${stderr}`;
+            extStatus.style.color = '#f38ba8';
+        } else {
+            extStatus.textContent = `Successfully uninstalled ${id}.`;
+            extStatus.style.color = '#a6e3a1';
+            loadExtensions();
+        }
+    } catch (e) {
+        extStatus.textContent = `Failed to uninstall ${id}.`;
+        extStatus.style.color = '#f38ba8';
+    }
+}
+
+extInstallBtn.addEventListener('click', () => {
+    loadExtensions();
+});
+
+extSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loadExtensions();
+});
+
+
+// ─── Add workspace button ─────────────────────────────────────────────────────
+
+addBtn.addEventListener('click', async () => {
+    const ws = await window.electronAPI.workspacesAdd();
+    if (ws) {
+        workspaces.push(ws);
+        await window.electronAPI.workspacesSave(workspaces);
+        renderWorkspaceBar();
+        switchWorkspace(ws.id);
+    }
+});
+
+// ─── Workspace Switch ─────────────────────────────────────────────────────────
+
+async function switchWorkspace(wsId: string) {
+    if (wsId === activeWorkspaceId) return;
+    activeWorkspaceId = wsId;
+    const ws = workspaces.find(w => w.id === wsId)!;
+
+    workspaceHeading.textContent = ws.name;
+    emptyState.classList.add('hidden');
+    renderWorkspaceBar();
+
+    if (activePtyId) { window.electronAPI.ptyKill({ id: activePtyId }); activePtyId = null; }
+    if (activeTerm) { activeTerm.dispose(); activeTerm = null; activeFitAddon = null; }
+    terminalPaneEl.innerHTML = '';
+
+    const term = new Terminal({
+        fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+        fontSize: 13, lineHeight: 1.2, cursorBlink: true,
+        theme: THEMES[currentTheme],
+    });
+
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon());
+    term.open(terminalPaneEl);
+
+    activeTerm = term;
+    activeFitAddon = fitAddon;
+    const ptyId = `pty-${wsId}-${Date.now()}`;
+    activePtyId = ptyId;
+
+    requestAnimationFrame(() => {
+        fitAddon.fit();
+        const { cols, rows } = term;
+        window.electronAPI.ptyCreate({ id: ptyId, cwd: ws.path, cols, rows });
+    });
+
+    term.onData((data) => { window.electronAPI.ptyInput({ id: ptyId, data }); });
+    term.focus();
+
+    loadExplorer(ws.path, ws.name);
+}
+
+// ─── File Explorer ────────────────────────────────────────────────────────────
+
+async function loadExplorer(dirPath: string, label?: string) {
+    explorerTitle.textContent = (label || dirPath).toUpperCase();
+    explorerTree.innerHTML = '';
+    await renderDir(dirPath, explorerTree, 0);
+}
+
+async function renderDir(dirPath: string, container: HTMLElement, depth: number) {
+    try {
+        const entries = await window.electronAPI.fsReadDir(dirPath);
+        const dirs = entries.filter(e => e.isDir).sort((a, b) => a.name.localeCompare(b.name));
+        const files = entries.filter(e => !e.isDir).sort((a, b) => a.name.localeCompare(b.name));
+
+        for (const entry of [...dirs, ...files]) {
+            if (entry.name.startsWith('.') && depth === 0) continue;
+            const item = document.createElement('div');
+            item.className = 'tree-item' + (entry.isDir ? ' dir' : '');
+            item.style.paddingLeft = `${8 + depth * 14}px`;
+
+            const icon = document.createElement('span');
+            icon.className = 'tree-icon';
+            icon.textContent = entry.isDir ? '📁' : getFileIcon(entry.name);
+            item.appendChild(icon);
+
+            const name = document.createElement('span');
+            name.textContent = entry.name;
+            item.appendChild(name);
+
+            const fullPath = `${dirPath}/${entry.name}`;
+            if (entry.isDir) {
+                let expanded = false;
+                let childContainer: HTMLElement | null = null;
+                item.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    expanded = !expanded;
+                    icon.textContent = expanded ? '📂' : '📁';
+                    if (expanded) {
+                        childContainer = document.createElement('div');
+                        item.after(childContainer);
+                        await renderDir(fullPath, childContainer, depth + 1);
+                    } else { childContainer?.remove(); childContainer = null; }
+                });
+            } else {
+                item.addEventListener('click', () => openFile(fullPath, item));
+            }
+            container.appendChild(item);
+        }
+    } catch {
+        const err = document.createElement('div');
+        err.className = 'tree-item';
+        err.style.color = '#f38ba8';
+        err.textContent = '⚠ permission denied';
+        container.appendChild(err);
+    }
+}
+
+function getFileIcon(name: string): string {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    const map: Record<string, string> = {
+        ts: '🔵', tsx: '🔵', js: '🟡', jsx: '🟡', py: '🐍', rs: '🦀', go: '🐹',
+        md: '📝', json: '⚙️', yaml: '⚙️', yml: '⚙️', css: '🎨', html: '🌐',
+        png: '🖼', jpg: '🖼', svg: '🖼', gif: '🖼', sh: '⚡', env: '🔒',
+    };
+    return map[ext] || '📄';
+}
+
+async function openFile(filePath: string, itemEl: HTMLElement) {
+    document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+    itemEl.classList.add('selected');
+    viewerFilepath.textContent = filePath.split('/').slice(-2).join('/');
+    viewerContent.innerHTML = '';
+    try {
+        const content = await window.electronAPI.fsReadFile(filePath);
+        const pre = document.createElement('pre');
+        pre.textContent = content;
+        viewerContent.appendChild(pre);
+    } catch {
+        viewerContent.innerHTML = '<pre style="color:#f38ba8;padding:12px">⚠ Binary or unreadable file</pre>';
+    }
+}
+
+// ─── PTY IPC ─────────────────────────────────────────────────────────────────
+
+window.electronAPI.onPtyData(({ id, data }) => { if (id === activePtyId) activeTerm?.write(data); });
+window.electronAPI.onPtyExit(({ id, exitCode }) => {
+    if (id === activePtyId) activeTerm?.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
+});
+
+// ─── Sash resizing ────────────────────────────────────────────────────────────
+
+function setupColSash(sashId: string, targetEl: HTMLElement, min: number, max: number) {
+    const sash = document.getElementById(sashId)!;
+    let dragging = false;
+    sash.addEventListener('mousedown', (e) => { dragging = true; document.body.style.cursor = 'col-resize'; e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const rect = targetEl.parentElement!.getBoundingClientRect();
+        const val = Math.min(Math.max(e.clientX - rect.left, min), max);
+        targetEl.style.width = `${val}px`;
+        refreshTerminal();
+    });
+    window.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; } });
+}
+
+function setupFlexColSash(sashId: string, targetEl: HTMLElement, min: number, max: number) {
+    const sash = document.getElementById(sashId)!;
+    let dragging = false;
+    sash.addEventListener('mousedown', (e) => { dragging = true; document.body.style.cursor = 'col-resize'; e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const appEl = document.getElementById('app')!;
+        const appRect = appEl.getBoundingClientRect();
+        const wsWidth = workspaceBar.offsetWidth + 4; // include sash
+        const val = Math.min(Math.max(e.clientX - appRect.left - wsWidth, min), max);
+        targetEl.style.flexBasis = `${val}px`;
+        refreshTerminal();
+    });
+    window.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; } });
+}
+
+function setupRowSash(sashId: string, targetEl: HTMLElement, min: number, max: number) {
+    const sash = document.getElementById(sashId)!;
+    let dragging = false;
+    sash.addEventListener('mousedown', (e) => { dragging = true; document.body.style.cursor = 'row-resize'; e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const rect = targetEl.parentElement!.getBoundingClientRect();
+        const val = Math.min(Math.max(e.clientY - rect.top, min), max);
+        targetEl.style.flexBasis = `${val}px`;
+    });
+    window.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; } });
+}
+
+setupColSash('workspace-sash', workspaceBar, 48, 280);
+setupFlexColSash('vertical-sash', document.getElementById('terminal-section')!, 200, window.innerWidth - 200);
+setupRowSash('horizontal-sash', document.getElementById('viewer-section')!, 60, window.innerHeight - 80);
+
+function refreshTerminal() {
+    if (activeFitAddon) {
+        requestAnimationFrame(() => {
+            try {
+                activeFitAddon!.fit();
+                if (activePtyId && activeTerm) {
+                    window.electronAPI.ptyResize({ id: activePtyId, cols: activeTerm.cols, rows: activeTerm.rows });
+                }
+            } catch { /* ignore */ }
+        });
+    }
+    renderWorkspaceBar();
+}
+
+const resizeObserver = new ResizeObserver(() => refreshTerminal());
+resizeObserver.observe(terminalPaneEl);
+
+// ─── Bootstrap ───────────────────────────────────────────────────────────────
+
+async function init() {
+    applyTheme(currentTheme);
+    workspaces = await window.electronAPI.workspacesLoad();
+    renderWorkspaceBar();
+    if (workspaces.length > 0) switchWorkspace(workspaces[0].id);
+}
+
+init();
