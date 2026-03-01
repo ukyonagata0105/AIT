@@ -40,8 +40,13 @@ function saveWorkspaces(workspaces: WorkspaceConfig[]) {
 let mainWindow: BrowserWindow | null = null;
 const ptyManager = new PtyManager();
 
+// Track active PTY for web sharing
+let activePtyId: string | null = null;
+
 // Export for web server to share PTY sessions
-export { ptyManager };
+export { ptyManager, activePtyId };
+
+
 
 // Server status tracking
 let serverStatus = {
@@ -126,6 +131,7 @@ ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; col
     // Auto-deploy skills from ~/.ai-terminal-ide/skills.json to this workspace
     deploySkillsToWorkspace(args.cwd);
     ptyManager.create(args.id, args.cwd, args.cols, args.rows);
+    activePtyId = args.id;  // Track active PTY for web sharing
     return { ok: true };
 });
 
@@ -237,15 +243,12 @@ ipcMain.handle('exec:run', async (_event, cmd: string) => {
     });
 });
 
+
 // Server: get status and IP address
-ipcMain.handle('server:getStatus', async () => {
-    return {
-        running: serverStatus.running,
-        port: webPort,
-        localIp: 'localhost',
-        networkIps: serverStatus.networkIps,
-        error: serverStatus.error
-    };
+
+// Terminal: get active PTY ID (for web sharing)
+ipcMain.handle('pty:getActiveId', async () => {
+    return { activePtyId };
 });
 
 // Shell: open file in system default application

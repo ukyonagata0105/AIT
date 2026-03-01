@@ -53,6 +53,7 @@ const isElectron = typeof window.electronAPI !== 'undefined';
 let webSocket: WebSocket | null = null;
 let wsReady = false;
 let wsMessageHandlers: ((msg: any) => void)[] = [];
+let wsWatchPtyId: string | null = null;  // PTY ID when in watch mode
 
 function initWebSocket(): Promise<void> {
     return new Promise((resolve) => {
@@ -77,6 +78,17 @@ function initWebSocket(): Promise<void> {
         webSocket.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
+                
+                // Handle 'attached' message - web is now watching an existing PTY
+                if (msg.type === 'attached') {
+                    wsWatchPtyId = msg.id;
+                    console.log('[WebMode] Attached to existing PTY:', msg.id);
+                    // Emit a fake 'data' event to trigger terminal initialization with this PTY
+                    wsMessageHandlers.forEach(handler => {
+                        handler({ type: 'data', id: msg.id, data: '' });
+                    });
+                }
+                
                 wsMessageHandlers.forEach(handler => handler(msg));
             } catch (e) {
                 console.error('[WebMode] Error parsing WebSocket message:', e);
@@ -117,7 +129,27 @@ const api = {
     ptyCreate: async (args: { id: string; cwd: string; cols: number; rows: number }) => {
         if (isElectron) return window.electronAPI!.ptyCreate(args);
         // Web mode: send via WebSocket
-        wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
+        if (wsWatchPtyId) {
+            // Already attached to existing PTY - just confirm
+            console.log('[WebMode] Already watching PTY:', wsWatchPtyId);
+            return { ok: true };
+        }
+        // Check if we can attach to existing PTY
+        try {
+            const resp = await fetch('/api/pty/list');
+            const data = await resp.json();
+            if (data.sessions && data.sessions.length > 0) {
+                // Attach to existing PTY instead of creating new one
+                wsSend({ type: 'watch', id: data.sessions[0] });
+                console.log('[WebMode] Attached to existing PTY:', data.sessions[0]);
+            } else {
+                // No existing PTY, create new one
+                wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
+            }
+        } catch (e) {
+            // Fallback: create new PTY
+            wsSend({ type: 'create', id: args.id, cwd: args.cwd, cols: args.cols, rows: args.rows });
+        }
         return { ok: true };
     },
     ptyInput: (args: { id: string; data: string }) => {

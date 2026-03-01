@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.send('pty:resize', args),
     ptyKill: (args: { id: string }) =>
         ipcRenderer.send('pty:kill', args),
+    ptyGetActiveId: () => ipcRenderer.invoke('pty:getActiveId'),
     onPtyData: (callback: (args: { id: string; data: string }) => void) => {
         ipcRenderer.on('pty:data', (_event, args) => callback(args));
     },
