@@ -13,6 +13,10 @@
   /* Xterm Theme defaults */
   --term-bg: #1a1a1a;
   --term-fg: #d4d4d4;
+
+  /* Design Tokens */
+  --focus-ring: 0 0 0 2px rgba(88, 101, 242, 0.5);
+  --focus-ring-offset: 0 0 0 4px rgba(88, 101, 242, 0.15);
 }
 
 [data-theme="tokyo-night"] {
@@ -108,6 +112,11 @@ body {
 .top-bar-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-main);
+}
+
+.top-bar-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 #top-bar-left,
@@ -219,11 +228,17 @@ body {
 }
 
 .workspace-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .workspace-item.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.workspace-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .workspace-item.active .workspace-icon {
@@ -283,9 +298,10 @@ body {
 }
 
 #workspace-add-btn:hover {
-  background: rgba(255, 255, 255, 0.13);
-  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.5);
   color: var(--text-main);
+  transform: scale(1.05);
 }
 
 /* ─── Sashes ─────────────────────────────────────────────────────────── */
@@ -349,9 +365,9 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   pointer-events: none;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 #empty-state.hidden {
@@ -359,22 +375,25 @@ body {
 }
 
 .empty-icon {
-  font-size: 44px;
-  opacity: 0.4;
+  font-size: 48px;
+  opacity: 0.6;
+  filter: grayscale(0.3);
 }
 
 .empty-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
 }
 
 .empty-sub {
-  font-size: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .empty-sub strong {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-main);
+  font-weight: 600;
 }
 
 /* ─── Broadcast Bar ──────────────────────────────────────────────────── */
@@ -451,16 +470,23 @@ body {
 
 .activity-btn:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.05);
 }
 
 .activity-btn.active {
   opacity: 1;
   background: var(--bg-item-active);
   color: var(--text-main);
-  border-left: 2px solid var(--accent);
+  border-left: 3px solid var(--accent);
   border-radius: 0 8px 8px 0;
   width: 100%;
+  font-weight: 600;
+}
+
+.activity-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-offset);
 }
 
 /* ─── Viewer ─────────────────────────────────────────────────────────── */
@@ -542,15 +568,16 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 8px;
+  padding: 3px 8px;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-main);
-  border-radius: 3px;
+  border-radius: 4px;
   margin: 0 4px;
+  transition: background 0.12s;
 }
 
 .tree-item:hover {
@@ -558,7 +585,13 @@ body {
 }
 
 .tree-item.selected {
-  background: var(--border-subtle);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+.tree-item.selected .tree-meta {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .tree-item .tree-icon {
@@ -576,23 +609,27 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  color: rgba(255, 255, 255, 0.18);
+  gap: 10px;
+  color: var(--text-muted);
   pointer-events: none;
+  opacity: 0.7;
 }
 
 .ph-icon {
-  font-size: 28px;
-  opacity: 0.5;
+  font-size: 32px;
+  opacity: 0.6;
+  filter: grayscale(0.3);
 }
 
 .ph-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  color: var(--text-muted);
 }
 
 .ph-sub {
-  font-size: 11px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* ─── Context Menu ───────────────────────────────────────────────────── */
@@ -604,7 +641,8 @@ body {
   padding: 4px;
   z-index: 9999;
   min-width: 140px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
 }
 
 .context-menu.hidden {
@@ -612,16 +650,27 @@ body {
 }
 
 .ctx-item {
-  padding: 7px 12px;
+  padding: 8px 12px;
   font-size: 13px;
   cursor: pointer;
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text-main);
   transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .ctx-item:hover {
   background: var(--bg-item-active);
+}
+
+.ctx-item:first-child {
+  margin-top: 2px;
+}
+
+.ctx-item:last-child {
+  margin-bottom: 2px;
 }
 
 .ctx-item.ctx-danger {
@@ -630,7 +679,7 @@ body {
 }
 
 .ctx-item.ctx-danger:hover {
-  background: rgba(243, 139, 168, 0.15);
+  background: rgba(243, 139, 168, 0.2);
 }
 
 /* ─── Settings Overlay ───────────────────────────────────────────────── */
@@ -699,12 +748,14 @@ body {
 }
 
 .settings-section h3 {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  color: #666;
+  color: var(--text-muted);
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* Settings workspace row */
@@ -1301,11 +1352,12 @@ body {
   outline: none;
   width: 100%;
   box-sizing: border-box;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 #explorer-filter:focus {
   border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 #explorer-filter::placeholder {
@@ -1319,7 +1371,7 @@ body {
 
 .sort-btn {
   flex: 1;
-  padding: 2px 0;
+  padding: 3px 6px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.3px;
@@ -1340,6 +1392,13 @@ body {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.sort-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* ─── Tree Item Metadata Span ────────────────────────────────────────────── */
@@ -1356,9 +1415,15 @@ body {
 }
 
 .tree-meta {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-muted);
   padding-right: 6px;
   white-space: nowrap;
   flex-shrink: 0;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.tree-item:hover .tree-meta {
+  opacity: 1;
 }

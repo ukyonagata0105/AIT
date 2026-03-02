@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Terminal IDE</title>
+  <title>TermNexus</title>
   <link rel="stylesheet" href="./index.css" />
 </head>
 
@@ -15,14 +15,10 @@
       <button id="ws-collapse-btn" title="Toggle workspace names">◀</button>
     </div>
     <div id="top-bar-center">
-      <span id="app-name">⚡ AIT</span>
+      <span id="app-name">⚡ TermNexus</span>
       <span id="workspace-heading"></span>
     </div>
     <div id="top-bar-right">
-      <div id="server-status">
-        <span id="server-status-indicator" class="status-unknown">●</span>
-        <span id="server-ip">--</span>
-      </div>
       <button id="settings-btn" title="Settings">⚙️</button>
     </div>
   </div>
@@ -32,21 +28,14 @@
     <!-- Workspace Bar (leftmost) -->
     <div id="workspace-bar">
       <div id="workspace-list"></div>
+      <div id="workspace-add-btn" title="Add Workspace"><span>+</span></div>
     </div>
 
     <div id="workspace-sash"></div>
 
     <!-- Terminal (left) -->
     <div id="terminal-section">
-      <div id="terminal-tabs-bar">
-        <div id="terminal-tabs"></div>
-        <button id="terminal-add-btn" title="Add Terminal">+</button>
-        <div id="terminal-layout-controls">
-          <button id="layout-split-h" title="Split Horizontal">⬌</button>
-          <button id="layout-split-v" title="Split Vertical">⬍</button>
-        </div>
-      </div>
-      <div id="terminal-pane" class="terminal-grid"></div>
+      <div id="terminal-pane"></div>
       <div id="empty-state">
         <div class="empty-icon">⌨️</div>
         <div class="empty-title">No workspace selected</div>
@@ -59,10 +48,9 @@
     <!-- Right panel -->
     <div id="right-panel">
 
-      <!-- ── Viewer Section (top-right 3/4) ── -->
-      <div id="viewer-section">
-        <!-- File Viewer (default) -->
-        <div id="view-viewer" class="viewer-view">
+      <!-- ── Explorer View ── -->
+      <div id="view-explorer" class="right-view">
+        <div id="viewer-section">
           <div id="viewer-toolbar">
             <span id="viewer-filepath" class="viewer-path">No file open</span>
           </div>
@@ -74,99 +62,79 @@
             </div>
           </div>
         </div>
-
-        <!-- PDF Viewer -->
-        <div id="view-pdf" class="viewer-view hidden">
-          <div class="panel-toolbar" id="pdf-toolbar">
-            <span class="toolbar-label">📄 PDF VIEWER</span>
-            <span id="pdf-filename" class="toolbar-path">No file open</span>
+        <div id="horizontal-sash"></div>
+        <div id="explorer-section">
+          <div id="explorer-toolbar">
+            <span id="explorer-title">EXPLORER</span>
           </div>
-          <webview id="pdf-webview" src="about:blank" style="flex: 1; border: none; width: 100%;" allowpopups>
-          </webview>
-        </div>
-
-        <!-- Image Viewer -->
-        <div id="view-image" class="viewer-view hidden">
-          <div class="panel-toolbar" id="image-toolbar">
-            <span class="toolbar-label">🖼️ IMAGE VIEWER</span>
-            <span id="image-info" class="toolbar-path">No file open</span>
-            <div class="toolbar-actions">
-              <button class="toolbar-btn" id="img-zoom-in" title="Zoom in">+</button>
-              <button class="toolbar-btn" id="img-zoom-out" title="Zoom out">−</button>
-              <button class="toolbar-btn" id="img-zoom-reset" title="Fit to view">⊡</button>
+          <!-- Sort + Filter bar -->
+          <div id="explorer-sort-bar">
+            <input id="explorer-filter" type="text" placeholder="🔍 Filter..." spellcheck="false" />
+            <div id="explorer-sort-btns">
+              <button class="sort-btn active" data-sort="name" title="Sort by Name">Name</button>
+              <button class="sort-btn" data-sort="type" title="Sort by Type">Type</button>
+              <button class="sort-btn" data-sort="date" title="Sort by Date">Date</button>
+              <button class="sort-btn" data-sort="size" title="Sort by Size">Size</button>
             </div>
           </div>
-          <div id="image-canvas-area">
-            <img id="image-display" src="" alt="" draggable="false" />
-          </div>
+          <div id="explorer-tree"></div>
         </div>
-
-        <!-- Browser Panel -->
-        <div id="view-browser" class="viewer-view hidden">
-          <div class="panel-toolbar browser-toolbar" id="browser-toolbar">
-            <div class="browser-nav">
-              <button class="toolbar-btn" id="browser-back" title="Back">←</button>
-              <button class="toolbar-btn" id="browser-fwd" title="Forward">→</button>
-              <button class="toolbar-btn" id="browser-reload" title="Reload">↻</button>
-            </div>
-            <input type="text" id="browser-url-bar" class="browser-url-input" placeholder="https://google.com"
-              spellcheck="false" />
-            <div class="browser-zoom">
-              <button class="toolbar-btn" id="browser-zoom-out" title="Zoom Out">−</button>
-              <button class="toolbar-btn" id="browser-zoom-reset" title="Reset Zoom (50%)">50%</button>
-              <button class="toolbar-btn" id="browser-zoom-in" title="Zoom In">+</button>
-            </div>
-            <div class="browser-actions">
-              <button class="toolbar-btn" id="browser-devtools" title="Dev Tools">🔧</button>
-            </div>
-            <input type="text" id="browser-url-bar" class="browser-url-input" placeholder="https://google.com"
-              spellcheck="false" />
-            <div class="browser-actions">
-              <button class="toolbar-btn" id="browser-devtools" title="Dev Tools">🔧</button>
-            </div>
-          </div>
-          <!-- Browser content container -->
-          <div class="browser-content">
-            <!-- Electron: uses webview -->
-            <webview id="browser-webview" src="about:blank" allowpopups></webview>
-            <!-- Web mode: uses iframe -->
-            <iframe id="browser-iframe" src="about:blank" sandbox="allow-scripts allow-modals allow-forms allow-popups allow-same-origin" style="display:none;"></iframe>
-          </div>
-        </div>
-      </div><!-- /viewer-section -->
-
-      <div id="horizontal-sash"></div>
-
-      <!-- ── Explorer View (always visible, bottom-right 1/4) ── -->
-      <div id="explorer-section">
-        <div id="explorer-toolbar">
-          <span id="explorer-title">EXPLORER</span>
-        </div>
-        <!-- Breadcrumb navigation -->
-        <div id="explorer-breadcrumb"></div>
-        <!-- Sort + Filter bar -->
-        <div id="explorer-sort-bar">
-          <input id="explorer-filter" type="text" placeholder="🔍 Filter..." spellcheck="false" />
-          <div id="explorer-sort-btns">
-            <button class="sort-btn active" data-sort="name" title="Sort by Name">Name</button>
-            <button class="sort-btn" data-sort="type" title="Sort by Type">Type</button>
-            <button class="sort-btn" data-sort="date" title="Sort by Date">Date</button>
-            <button class="sort-btn" data-sort="size" title="Sort by Size">Size</button>
-          </div>
-        </div>
-        <div id="explorer-tree"></div>
       </div>
 
-    </div><!-- /right-panel -->
-    
+      <!-- ── PDF Viewer ── -->
+      <div id="view-pdf" class="right-view hidden">
+        <div class="panel-toolbar" id="pdf-toolbar">
+          <span class="toolbar-label">📄 PDF VIEWER</span>
+          <span id="pdf-filename" class="toolbar-path">No file open</span>
+        </div>
+        <webview id="pdf-webview" src="about:blank" style="flex: 1; border: none; width: 100%;" allowpopups>
+        </webview>
+      </div>
+
+      <!-- ── Image Viewer ── -->
+      <div id="view-image" class="right-view hidden">
+        <div class="panel-toolbar" id="image-toolbar">
+          <span class="toolbar-label">🖼️ IMAGE VIEWER</span>
+          <span id="image-info" class="toolbar-path">No file open</span>
+          <div class="toolbar-actions">
+            <button class="toolbar-btn" id="img-zoom-in" title="Zoom in">+</button>
+            <button class="toolbar-btn" id="img-zoom-out" title="Zoom out">−</button>
+            <button class="toolbar-btn" id="img-zoom-reset" title="Fit to view">⊡</button>
+          </div>
+        </div>
+        <div id="image-canvas-area">
+          <img id="image-display" src="" alt="" draggable="false" />
+        </div>
+      </div>
+
+      <!-- ── Browser Panel ── -->
+      <div id="view-browser" class="right-view hidden">
+        <div class="panel-toolbar browser-toolbar" id="browser-toolbar">
+          <div class="browser-nav">
+            <button class="toolbar-btn" id="browser-back" title="Back">←</button>
+            <button class="toolbar-btn" id="browser-fwd" title="Forward">→</button>
+            <button class="toolbar-btn" id="browser-reload" title="Reload">↻</button>
+          </div>
+          <input type="text" id="browser-url-bar" class="browser-url-input" placeholder="https://localhost:3000"
+            spellcheck="false" />
+          <div class="browser-actions">
+            <button class="toolbar-btn" id="browser-devtools" title="Dev Tools">🔧</button>
+          </div>
+        </div>
+        <webview id="browser-webview" src="about:blank" style="flex: 1; border: none; width: 100%;" allowpopups>
+        </webview>
+      </div>
+
+    </div>
+
     <!-- Right Activity Bar -->
     <div id="right-activity-bar">
-      <div class="activity-btn active" data-view="viewer" title="File Viewer">📄</div>
-      <div class="activity-btn" data-view="pdf" title="PDF Viewer">📑</div>
+      <div class="activity-btn active" data-view="explorer" title="Explorer">📂</div>
+      <div class="activity-btn" data-view="pdf" title="PDF Viewer">📄</div>
       <div class="activity-btn" data-view="image" title="Image Viewer">🖼️</div>
       <div class="activity-btn" data-view="browser" title="Browser">🌐</div>
     </div>
-  </div><!-- /app -->
+  </div>
 
   <!-- ─── Settings Panel (overlay) ─────────────────────────────────────── -->
   <div id="settings-overlay" class="hidden">
@@ -178,7 +146,6 @@
       <div id="settings-tabs">
         <button class="settings-tab active" data-tab="workspaces">Workspaces</button>
         <button class="settings-tab" data-tab="appearance">Appearance</button>
-        <button class="settings-tab" data-tab="terminal">Terminal</button>
       </div>
       <div id="settings-body">
         <!-- Workspaces tab -->
@@ -209,64 +176,6 @@
             </div>
           </div>
         </section>
-        <!-- Terminal tab -->
-        <section class="settings-section hidden" id="tab-terminal">
-          <h3>Terminal Layout</h3>
-          <p class="settings-desc">Default layout when splitting terminals:</p>
-          <div class="layout-options">
-            <label class="layout-option">
-              <input type="radio" name="terminal-layout" value="horizontal" checked>
-              <span class="layout-preview">■|■</span>
-              <span class="layout-label">Horizontal</span>
-            </label>
-            <label class="layout-option">
-              <input type="radio" name="terminal-layout" value="vertical">
-              <span class="layout-preview">■<br>■</span>
-              <span class="layout-label">Vertical</span>
-            </label>
-            <label class="layout-option">
-              <input type="radio" name="terminal-layout" value="auto">
-              <span class="layout-preview">▢</span>
-              <span class="layout-label">Auto</span>
-            </label>
-          </div>
-          
-          <h3 style="margin-top: 20px;">Font Size</h3>
-          <p class="settings-desc">Terminal font size (px):</p>
-          <div class="font-size-control">
-            <button type="button" id="font-size-decrease" class="font-btn">−</button>
-            <span id="font-size-display">13</span>
-            <button type="button" id="font-size-increase" class="font-btn">+</button>
-          </div>
-          
-          <h3 style="margin-top: 20px;">Scrollback</h3>
-          <p class="settings-desc">Terminal history lines:</p>
-          <div class="scrollback-options">
-            <label class="scrollback-option">
-              <input type="radio" name="scrollback" value="50">
-              <span>50</span>
-            </label>
-            <label class="scrollback-option">
-              <input type="radio" name="scrollback" value="100" checked>
-              <span>100</span>
-            </label>
-            <label class="scrollback-option">
-              <input type="radio" name="scrollback" value="500">
-              <span>500</span>
-            </label>
-            <label class="scrollback-option">
-              <input type="radio" name="scrollback" value="1000">
-              <span>1K</span>
-            </label>
-            <label class="scrollback-option">
-              <input type="radio" name="scrollback" value="5000">
-              <span>5K</span>
-            </label>
-            <label class="scrollback-option">
-              <input type="radio" name="scrollback" value="10000">
-              <span>10K</span>
-            </label>
-          </div>
         </section>
       </div>
     </div>
@@ -276,15 +185,6 @@
   <div id="ws-context-menu" class="context-menu hidden">
     <div class="ctx-item" id="ctx-rename">✏️ Rename</div>
     <div class="ctx-item ctx-danger" id="ctx-delete">🗑️ Remove</div>
-  </div>
-
-  <!-- Explorer file/folder context menu -->
-  <div id="explorer-context-menu" class="context-menu hidden">
-    <div class="ctx-item" id="ctx-copy-relative">📋 Copy Relative Path</div>
-    <div class="ctx-item" id="ctx-copy-absolute">📋 Copy Absolute Path</div>
-    <div class="ctx-item" id="ctx-copy-name">📝 Copy Name</div>
-    <div class="ctx-separator"></div>
-    <div class="ctx-item" id="ctx-open-external">📂 Open in Finder</div>
   </div>
 
   <!-- Broadcast bar -->
