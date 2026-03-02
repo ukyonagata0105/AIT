@@ -47,3 +47,19 @@ playwright/.cache/
 # Development documentation
 AGENTS.md
 .cursor/
+
+# Development/temp files
+fix.md
+*.bak
+specs.md
+ui_specification.md
+
+# Test screenshots (keep only assets)
+app-test.png
+web-server-test.png
+layout-check.png
+terminal-grid-2.png
+web-mode-current-state.png
+
+# Agent skills (development only)
+.agent/
