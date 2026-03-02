@@ -1,7 +1,12 @@
 {
-    "name": "ai-terminal-ide",
+    "name": "termnexus",
     "version": "0.1.0",
-    "description": "AI-Native Terminal-First IDE — Custom Electron Shell",
+    "description": "TermNexus - A friendly terminal for CLI LLM Coding Agents",
+    "author": "Ukyo Nagata",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ukyonagata0105/AIT.git"
+    },
     "main": "dist/main/main.js",
     "scripts": {
         "dev": "concurrently \"npm run build:watch\" \"npm run electron:dev\"",
@@ -46,8 +51,8 @@
     }
 ,
     "build": {
-        "appId": "com.aiterminal.ide",
-        "productName": "AI Terminal IDE",
+        "appId": "com.termnexus.app",
+        "productName": "TermNexus",
         "directories": {
             "output": "release"
         },
