@@ -47,6 +47,7 @@ playwright/.cache/
 # Development documentation
 AGENTS.md
 .cursor/
+UI_IMPROVEMENTS.md
 
 # Development/temp files
 fix.md
