@@ -10,20 +10,27 @@
     "main": "dist/main/main.js",
     "scripts": {
         "dev": "concurrently \"npm run build:watch\" \"npm run electron:dev\"",
-        "build": "npm run build:main && npm run build:preload && npm run build:renderer && npm run copy:html",
-        "build:main": "esbuild src/main/main.ts src/main/ptyManager.ts src/main/webServer.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --external:@modelcontextprotocol/sdk --external:axios --external:express --external:ws --outdir=dist/main --format=cjs --sourcemap",
-        "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --external:electron --external:playwright-core --external:@modelcontextprotocol/sdk --external:axios --outdir=dist/main --format=cjs --sourcemap",
+        "build": "node scripts/build.mjs",
+        "build:dev": "node scripts/build.mjs --watch",
+        "build:shared": "esbuild src/shared/**/*.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --outdir=dist/shared --format=cjs --sourcemap --entry-names=[dir]/[name]",
+        "build:main": "esbuild src/main/main.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --external:@modelcontextprotocol/sdk --external:axios --external:express --external:ws --outdir=dist/main --format=cjs --sourcemap",
+        "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --external:electron --external:playwright-core --external:@modelcontextprotocol/sdk --outdir=dist/main --format=cjs --sourcemap",
         "build:renderer": "esbuild src/renderer/index.ts --bundle --platform=browser --outdir=dist/renderer --sourcemap --loader:.css=css",
         "copy:html": "cp src/renderer/index.html dist/renderer/index.html",
         "build:watch": "concurrently \"npm run build:main -- --watch\" \"npm run build:preload -- --watch\" \"npm run build:renderer -- --watch\"",
         "electron:dev": "wait-on dist/main/main.js && cross-env NODE_ENV=development electron .",
         "start": "npm run build && electron .",
         "start:web": "npm run build && electron . --web",
-        "test": "npm run build && playwright test",
+        "test": "npm run build && npm run test:unit",
+        "test:unit": "node dist/test/run.js",
+        "test:unit:watch": "npm run build:test && chokidar 'src/**/*.ts' -c 'npm run build:test && npm run test:unit'",
+        "test:e2e": "playwright test",
+        "test:e2e:headed": "playwright test --headed",
+        "build:test": "esbuild src/test/run.ts src/test/utils.test.ts src/test/helpers.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --external:@modelcontextprotocol/sdk --external:express --external:ws --outdir=dist/test --format=cjs --sourcemap",
         "test:headed": "npm run build && playwright test --headed",
         "pack": "npm run build && electron-builder --dir",
         "dist": "npm run build && electron-builder"
-},
+    },
     "devDependencies": {
         "@electron/rebuild": "^4.0.3",
         "@playwright/test": "^1.58.2",
@@ -35,6 +42,7 @@
         "electron": "^29.0.0",
         "electron-builder": "^26.8.1",
         "esbuild": "^0.20.0",
+        "glob": "^13.0.6",
         "playwright": "^1.58.2",
         "typescript": "^5.0.0",
         "wait-on": "^7.0.0"
@@ -48,8 +56,7 @@
         "node-pty": "^1.0.0",
         "playwright-core": "^1.58.2",
         "ws": "^8.19.0"
-    }
-,
+    },
     "build": {
         "appId": "com.termnexus.app",
         "productName": "TermNexus",

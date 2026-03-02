@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { exec } from 'child_process';
 import * as https from 'https';
-import { PtyManager } from './ptyManager';
+import { PtyManager } from './infrastructure/PtyManager';
 import { PlaywrightAltMcp } from './mcpServer';
 import { deploySkillsToWorkspace, deployGlobalSkills, markShutdown } from './skillsManager';
 import { startWebServer, setSharedPtyManager } from './webServer';
@@ -90,10 +90,12 @@ function createWindow() {
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
         console.error('[Window] Load failed:', errorCode, errorDescription);
     });
-    
-    // Always open DevTools for debugging during development
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-    
+
+    // Only open DevTools in development mode (disable for tests)
+    if (process.env.NODE_ENV !== 'test') {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+
     console.log('[createWindow] Done');
 }
 
@@ -124,7 +126,7 @@ app.on('web-contents-created', (_event, contents) => {
 ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; cols: number; rows: number }) => {
     // Auto-deploy skills from ~/.ai-terminal-ide/skills.json to this workspace
     deploySkillsToWorkspace(args.cwd);
-    ptyManager.create(args.id, args.cwd, args.cols, args.rows);
+    ptyManager.create(args);
     return { ok: true };
 });
 

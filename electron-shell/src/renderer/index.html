@@ -35,6 +35,16 @@
 
     <!-- Terminal (left) -->
     <div id="terminal-section">
+      <div id="terminal-tabs-header">
+        <div id="terminal-tabs-list"></div>
+        <div id="layout-controls" class="layout-controls">
+          <button class="layout-btn" data-layout="tabs" title="Tab View">📑</button>
+          <button class="layout-btn" data-layout="horizontal" title="Split Horizontal">◧</button>
+          <button class="layout-btn" data-layout="vertical" title="Split Vertical">◨</button>
+          <button class="layout-btn" data-layout="grid" title="Grid View">▦</button>
+        </div>
+        <button id="terminal-tab-add" title="Add terminal tab">+</button>
+      </div>
       <div id="terminal-pane"></div>
       <div id="empty-state">
         <div class="empty-icon">⌨️</div>
@@ -145,6 +155,7 @@
       </div>
       <div id="settings-tabs">
         <button class="settings-tab active" data-tab="workspaces">Workspaces</button>
+        <button class="settings-tab" data-tab="server">Server</button>
         <button class="settings-tab" data-tab="appearance">Appearance</button>
       </div>
       <div id="settings-body">
@@ -153,6 +164,14 @@
           <h3>Workspaces</h3>
           <div id="settings-ws-list"></div>
           <button id="settings-add-ws" class="settings-btn-add">+ Add Workspace</button>
+        </section>
+        <!-- Server tab -->
+        <section class="settings-section hidden" id="tab-server">
+          <h3>Web Server</h3>
+          <p>Access this terminal from other devices on your network:</p>
+          <div id="server-urls" class="server-urls">
+            <p style="color: var(--text-muted);">Loading server status...</p>
+          </div>
         </section>
         <!-- Appearance tab -->
         <section class="settings-section hidden" id="tab-appearance">
@@ -185,6 +204,12 @@
   <div id="ws-context-menu" class="context-menu hidden">
     <div class="ctx-item" id="ctx-rename">✏️ Rename</div>
     <div class="ctx-item ctx-danger" id="ctx-delete">🗑️ Remove</div>
+  </div>
+
+  <!-- File context menu -->
+  <div id="file-context-menu" class="context-menu hidden">
+    <div class="ctx-item" id="ctx-copy-path">📋 Copy Absolute Path</div>
+    <div class="ctx-item" id="ctx-copy-rel-path">📋 Copy Relative Path</div>
   </div>
 
   <!-- Broadcast bar -->

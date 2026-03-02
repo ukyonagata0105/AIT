@@ -73,5 +73,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     sendDomResult: (result: { ok: boolean; data?: string; error?: string }) => {
         ipcRenderer.send('browser:domResult', result);
-    }
+    },
+
+    // Search operations
+    searchGrep: (options: { path: string; pattern: string; args: string[]; signal?: AbortSignal }) =>
+        ipcRenderer.invoke('search:grep', options),
+    searchFiles: (options: { path: string; pattern: string }) =>
+        ipcRenderer.invoke('search:files', options),
+    searchRipgrep: (options: { path: string; pattern: string; args: string[] }) =>
+        ipcRenderer.invoke('search:ripgrep', options),
 });

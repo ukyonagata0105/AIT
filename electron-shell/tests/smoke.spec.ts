@@ -13,7 +13,18 @@ test.describe('AI Terminal IDE - Phase 1 Smoke Tests', () => {
             cwd: ELECTRON_APP,
             env: { ...process.env, NODE_ENV: 'test' },
         });
+        // Wait for the first window and ensure it's the main app window
         page = await electronApp.firstWindow();
+
+        // If we got the DevTools window by mistake, wait for the actual app window
+        const title = await page.title();
+        if (title === 'DevTools') {
+            const windows = electronApp.windows();
+            const appWindow = windows.find(w => w.url().includes('index.html'));
+            if (appWindow) {
+                page = appWindow;
+            }
+        }
     });
 
     test.afterEach(async () => {
@@ -24,7 +35,7 @@ test.describe('AI Terminal IDE - Phase 1 Smoke Tests', () => {
 
     test('app window opens', async () => {
         const title = await page.title();
-        expect(title).toBe('AI Terminal IDE');
+        expect(title).toBe('TermNexus');
     });
 
     test('workspace bar is present', async () => {
@@ -97,20 +108,7 @@ test.describe('AI Terminal IDE - Phase 1 Smoke Tests', () => {
         const terminalPane = page.locator('#terminal-pane');
         const workspaceItems = page.locator('.workspace-item');
         const wsCount = await workspaceItems.count();
-        
-        // If workspaces are loaded, terminal pane should be visible (not covered by empty state)
-        if (wsCount > 0) {
-            await expect(terminalPane).toBeVisible();
-            // Empty state should not be overlaying the terminal
-            const emptyState = page.locator('#empty-state');
-            const isEmptyVisible = await emptyState.isVisible();
-            expect(isEmptyVisible).toBe(false);
-        }
-    test('terminal pane is visible when workspace is active', async () => {
-        const terminalPane = page.locator('#terminal-pane');
-        const workspaceItems = page.locator('.workspace-item');
-        const wsCount = await workspaceItems.count();
-        
+
         // If workspaces are loaded, terminal pane should be visible (not covered by empty state)
         if (wsCount > 0) {
             await expect(terminalPane).toBeVisible();

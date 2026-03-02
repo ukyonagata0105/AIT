@@ -2,7 +2,7 @@ import express from 'express';
 import * as http from 'http';
 import * as path from 'path';
 import * as os from 'os';
-import { PtyManager } from './ptyManager';
+import { PtyManager } from './infrastructure/PtyManager';
 
 // Shared PTY manager - set from main process
 let sharedPtyManager: PtyManager | null = null;
@@ -130,7 +130,7 @@ export function startWebServer(port: number = 4096): void {
         };
 
         const pty = getPtyManager();
-        
+
         // Auto-attach to existing PTY if any (sync with Electron)
         const existingSessions = pty.getSessionIds();
         if (existingSessions.length > 0) {
@@ -150,7 +150,12 @@ export function startWebServer(port: number = 4096): void {
                     case 'create':
                         currentPtyId = msg.id;
                         isSharedSession = false;  // Web-created PTY, kill on disconnect
-                        pty.create(msg.id, msg.cwd, msg.cols || 80, msg.rows || 24);
+                        pty.create({
+                            id: msg.id,
+                            cwd: msg.cwd,
+                            cols: msg.cols || 80,
+                            rows: msg.rows || 24
+                        });
                         console.log(`[WebServer] Created remote PTY: ${msg.id}`);
                         break;
                     case 'watch':

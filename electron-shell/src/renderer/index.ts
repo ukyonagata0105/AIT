@@ -37,6 +37,7 @@ declare const window: Window & {
         fsReadFile: (path: string) => Promise<string>;
         execRun: (cmd: string) => Promise<{ stdout: string; stderr: string }>;
         extSearch: (query: string) => Promise<any>;
+        serverGetStatus: () => Promise<{ running: boolean; port: number; localIp: string; networkIps: string[]; error: string | null }>;
         onExtensionInstall?: (callback: (id: string) => void) => void;
     };
 };
@@ -50,6 +51,57 @@ let activeFitAddon: FitAddon | null = null;
 let activePtyId: string | null = null;
 // Map workspace IDs to their saved terminal state (PTY ID + dimensions)
 const workspaceTerminalStates = new Map<string, TerminalState>();
+
+// Terminal tabs state
+interface TerminalTab {
+    id: string;
+    name: string;
+    ptyId: string;
+    terminal: Terminal;
+    fitAddon: FitAddon;
+    element: HTMLElement;
+}
+
+const workspaceTerminalTabs = new Map<string, TerminalTab[]>();
+let activeTerminalTabId: string | null = null;
+
+// ─── Grid Layout State ─────────────────────────────────────────────────────────────
+
+type LayoutMode = 'tabs' | 'horizontal' | 'vertical' | 'grid';
+
+interface GridLayout {
+    mode: LayoutMode;
+    columns: number;  // for grid mode
+}
+
+let currentLayout: GridLayout = {
+    mode: 'tabs',
+    columns: 2
+};
+
+// Load saved layout
+const savedLayout = localStorage.getItem('terminal-layout');
+if (savedLayout) {
+    try {
+        currentLayout = JSON.parse(savedLayout);
+    } catch {}
+}
+
+function saveLayout() {
+    localStorage.setItem('terminal-layout', JSON.stringify(currentLayout));
+}
+
+function setLayoutMode(mode: LayoutMode) {
+    currentLayout.mode = mode;
+    saveLayout();
+    renderTerminalArea();
+}
+
+function setGridColumns(cols: number) {
+    currentLayout.columns = cols;
+    saveLayout();
+    renderTerminalArea();
+}
 
 // Theme state
 let currentTheme = localStorage.getItem('theme') || 'dark';
@@ -72,6 +124,9 @@ const viewerFilepath = document.getElementById('viewer-filepath')!;
 const ctxMenu = document.getElementById('ws-context-menu')!;
 const ctxRename = document.getElementById('ctx-rename')!;
 const ctxDelete = document.getElementById('ctx-delete')!;
+const fileContextMenu = document.getElementById('file-context-menu')!;
+const ctxCopyPath = document.getElementById('ctx-copy-path')!;
+const ctxCopyRelPath = document.getElementById('ctx-copy-rel-path')!;
 const settingsOverlay = document.getElementById('settings-overlay')!;
 const settingsClose = document.getElementById('settings-close')!;
 const settingsWsList = document.getElementById('settings-ws-list')!;
@@ -94,12 +149,17 @@ settingsBtn.addEventListener('click', () => {
 
 // Settings tab switching
 document.querySelectorAll('.settings-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
         const tab = (btn as HTMLElement).dataset.tab!;
         document.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         document.querySelectorAll('.settings-section').forEach(s => s.classList.add('hidden'));
         document.getElementById(`tab-${tab}`)?.classList.remove('hidden');
+
+        // Load server URLs when server tab is activated
+        if (tab === 'server') {
+            await loadServerUrls();
+        }
     });
 });
 
@@ -236,6 +296,11 @@ function renderWorkspaceBar() {
         });
         workspaceList.appendChild(item);
     }
+
+    // Ensure add button is after the list (inside workspace-bar but after workspace-list)
+    if (addBtn.parentElement !== workspaceBar) {
+        workspaceBar.appendChild(addBtn);
+    }
 }
 
 // ─── Context Menu ─────────────────────────────────────────────────────────────
@@ -245,7 +310,17 @@ function showContextMenu(x: number, y: number) {
     ctxMenu.style.top = `${y}px`;
     ctxMenu.classList.remove('hidden');
 }
-function hideContextMenu() { ctxMenu.classList.add('hidden'); }
+
+function showFileContextMenu(x: number, y: number) {
+    fileContextMenu.style.left = `${x}px`;
+    fileContextMenu.style.top = `${y}px`;
+    fileContextMenu.classList.remove('hidden');
+}
+
+function hideContextMenu() {
+    ctxMenu.classList.add('hidden');
+    fileContextMenu.classList.add('hidden');
+}
 
 window.addEventListener('click', () => hideContextMenu());
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideContextMenu(); settingsOverlay.classList.add('hidden'); } });
@@ -269,28 +344,60 @@ ctxDelete.addEventListener('click', async () => {
     await deleteWorkspace(ctxTargetWsId);
 });
 
+// File context menu handlers
+ctxCopyPath.addEventListener('click', async () => {
+    hideContextMenu();
+    const filePath = (fileContextMenu as any).dataset.targetPath;
+    if (filePath) {
+        await navigator.clipboard.writeText(filePath);
+        // Optional: show a brief toast/notification
+    }
+});
+
+ctxCopyRelPath.addEventListener('click', async () => {
+    hideContextMenu();
+    const filePath = (fileContextMenu as any).dataset.targetPath;
+    if (filePath && activeWorkspaceId) {
+        const ws = workspaces.find(w => w.id === activeWorkspaceId);
+        if (ws) {
+            const relPath = filePath.replace(ws.path + '/', '');
+            await navigator.clipboard.writeText(relPath);
+        }
+    }
+});
+
 async function deleteWorkspace(wsId: string) {
     const ws = workspaces.find(w => w.id === wsId);
     if (!ws || !confirm(`Remove workspace "${ws.name}"?`)) return;
 
-    // Kill PTY session for this workspace (if it exists)
+    // Kill all PTY sessions and clean up all terminal tabs for this workspace
+    const tabs = getTerminalTabs(wsId);
+    for (const tab of tabs) {
+        window.electronAPI.ptyKill({ id: tab.ptyId });
+        tab.terminal.dispose();
+        tab.element.remove();
+    }
+    workspaceTerminalTabs.delete(wsId);
+
+    // Clean up old terminal states
     const savedState = workspaceTerminalStates.get(wsId);
     if (savedState && savedState.ptyId) {
         window.electronAPI.ptyKill({ id: savedState.ptyId });
-        workspaceTerminalStates.delete(wsId); // Remove from saved state map
+        workspaceTerminalStates.delete(wsId);
     }
 
-    if (wsId === activeWorkspaceId && activePtyId) {
-        window.electronAPI.ptyKill({ id: activePtyId });
+    if (wsId === activeWorkspaceId) {
+        // Clean up active state
         activePtyId = null;
-        activeTerm?.dispose();
         activeTerm = null;
         activeFitAddon = null;
+        activeTerminalTabId = null;
         terminalPaneEl.innerHTML = '';
         emptyState.classList.remove('hidden');
         activeWorkspaceId = null;
         workspaceHeading.textContent = '';
     }
+
     workspaces = workspaces.filter(w => w.id !== wsId);
     await window.electronAPI.workspacesSave(workspaces);
     renderWorkspaceBar();
@@ -300,7 +407,8 @@ async function deleteWorkspace(wsId: string) {
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 
-function renderSettingsPanel() {
+async function renderSettingsPanel() {
+    // Render workspace list
     settingsWsList.innerHTML = '';
     for (const ws of workspaces) {
         const row = document.createElement('div');
@@ -375,6 +483,65 @@ function renderSettingsPanel() {
     }
 }
 
+// ─── Server URLs ─────────────────────────────────────────────────────────────
+
+async function loadServerUrls() {
+    const status = await window.electronAPI.serverGetStatus();
+    const container = document.getElementById('server-urls')!;
+    container.innerHTML = '';
+
+    if (!status.running) {
+        container.innerHTML = '<p style="color: var(--text-muted);">Server not running</p>';
+        return;
+    }
+
+    // Local URL
+    addServerUrlItem(container, 'Local', `http://localhost:${status.port}`);
+
+    // Network URLs
+    for (const ip of status.networkIps) {
+        addServerUrlItem(container, 'Network', `http://${ip}:${status.port}`);
+    }
+}
+
+function addServerUrlItem(container: HTMLElement, label: string, url: string) {
+    const item = document.createElement('div');
+    item.className = 'server-url-item';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'url-label';
+    labelSpan.textContent = label;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'url-input';
+    input.value = url;
+    input.readOnly = true;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-url-btn';
+    copyBtn.textContent = '📋';
+    copyBtn.title = 'Copy to clipboard';
+    copyBtn.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(url);
+            copyBtn.textContent = '✅';
+            setTimeout(() => copyBtn.textContent = '📋', 1500);
+        } catch {
+            // Fallback for older browsers
+            input.select();
+            document.execCommand('copy');
+            copyBtn.textContent = '✅';
+            setTimeout(() => copyBtn.textContent = '📋', 1500);
+        }
+    });
+
+    item.appendChild(labelSpan);
+    item.appendChild(input);
+    item.appendChild(copyBtn);
+    container.appendChild(item);
+}
+
 settingsAddWs.addEventListener('click', async () => {
     const ws = await window.electronAPI.workspacesAdd();
     if (ws) {
@@ -438,14 +605,7 @@ async function switchWorkspace(wsId: string) {
         applyTheme('dark');
     }
 
-    // STEP 1: Save current workspace's terminal state before switching away
-    if (activeWorkspaceId && activePtyId && activeTerm) {
-        const savedCols = activeTerm.cols;
-        const savedRows = activeTerm.rows;
-        workspaceTerminalStates.set(activeWorkspaceId, { ptyId: activePtyId, cols: savedCols, rows: savedRows });
-    }
-
-    // STEP 2: Update active workspace reference
+    // Update active workspace reference
     activeWorkspaceId = wsId;
     const ws = workspaces.find(w => w.id === wsId)!;
 
@@ -453,65 +613,21 @@ async function switchWorkspace(wsId: string) {
     emptyState.classList.add('hidden');
     renderWorkspaceBar();
 
-    // STEP 3: Try to restore saved terminal state for this workspace
-    const savedState = workspaceTerminalStates.get(wsId);
+    // Hide all terminals
+    document.querySelectorAll('.terminal-container').forEach(el => {
+        (el as HTMLElement).style.display = 'none';
+    });
 
-    if (savedState && savedState.ptyId) {
-        // Restore existing PTY session instead of creating new one
-        activePtyId = savedState.ptyId;
-        
-        const term = new Terminal({
-            fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-            fontSize: 13, lineHeight: 1.2, cursorBlink: true,
-            theme: THEMES[currentTheme],
-        });
+    // Check if workspace has tabs
+    const tabs = getTerminalTabs(wsId);
 
-        const fitAddon = new FitAddon();
-        term.loadAddon(fitAddon);
-        term.loadAddon(new WebLinksAddon());
-        term.open(terminalPaneEl);
-
-        activeTerm = term;
-        activeFitAddon = fitAddon;
-
-        requestAnimationFrame(() => {
-            fitAddon.fit();
-            const { cols, rows } = term;
-            // Resize PTY to match saved dimensions if needed
-            window.electronAPI.ptyResize({ id: activePtyId, cols: savedState.cols, rows: savedState.rows });
-        });
+    if (tabs.length === 0) {
+        // Create first tab if none exist
+        await createTerminalTab('Terminal 1');
     } else {
-        // No saved state - create fresh terminal (backward compatible)
-        if (activePtyId) { window.electronAPI.ptyKill({ id: activePtyId }); activePtyId = null; }
-        if (activeTerm) { activeTerm.dispose(); activeTerm = null; activeFitAddon = null; }
-        terminalPaneEl.innerHTML = '';
-
-        const term = new Terminal({
-            fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-            fontSize: 13, lineHeight: 1.2, cursorBlink: true,
-            theme: THEMES[currentTheme],
-        });
-
-        const fitAddon = new FitAddon();
-        term.loadAddon(fitAddon);
-        term.loadAddon(new WebLinksAddon());
-        term.open(terminalPaneEl);
-
-        activeTerm = term;
-        activeFitAddon = fitAddon;
-        const ptyId = `pty-${wsId}-${Date.now()}`;
-        activePtyId = ptyId;
-
-        requestAnimationFrame(() => {
-            fitAddon.fit();
-            const { cols, rows } = term;
-            window.electronAPI.ptyCreate({ id: ptyId, cwd: ws.path, cols, rows });
-        });
-    }
-
-    if (activeTerm) {
-        activeTerm.onData((data) => { window.electronAPI.ptyInput({ id: activePtyId!, data }); });
-        activeTerm.focus();
+        // Switch to first tab or last active tab
+        const tabToSwitch = tabs.find(t => t.id === activeTerminalTabId) || tabs[0];
+        switchTerminalTab(tabToSwitch.id);
     }
 
     loadExplorer(ws.path, ws.name);
@@ -634,6 +750,17 @@ async function renderDir(dirPath: string, container: HTMLElement, depth: number)
             }
 
             const fullPath = `${dirPath}/${entry.name}`;
+            // Store path for context menu
+            (item as any).dataset.filePath = fullPath;
+
+            // Add context menu
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (fileContextMenu as any).dataset.targetPath = fullPath;
+                showFileContextMenu(e.clientX, e.clientY);
+            });
+
             if (entry.isDir) {
                 let expanded = false;
                 let childContainer: HTMLElement | null = null;
@@ -704,8 +831,28 @@ async function openFile(filePath: string, itemEl: HTMLElement) {
 
 // ─── PTY IPC ─────────────────────────────────────────────────────────────────
 
-window.electronAPI.onPtyData(({ id, data }) => { if (id === activePtyId) activeTerm?.write(data); });
+window.electronAPI.onPtyData(({ id, data }) => {
+    // Find the terminal tab with this PTY ID
+    for (const [, tabs] of workspaceTerminalTabs) {
+        const tab = tabs.find(t => t.ptyId === id);
+        if (tab) {
+            tab.terminal.write(data);
+            return;
+        }
+    }
+    // Fallback to active terminal
+    if (id === activePtyId) activeTerm?.write(data);
+});
 window.electronAPI.onPtyExit(({ id, exitCode }) => {
+    // Find the terminal tab with this PTY ID
+    for (const [, tabs] of workspaceTerminalTabs) {
+        const tab = tabs.find(t => t.ptyId === id);
+        if (tab) {
+            tab.terminal.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
+            return;
+        }
+    }
+    // Fallback to active terminal
     if (id === activePtyId) activeTerm?.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
 });
 
@@ -714,54 +861,64 @@ window.electronAPI.onPtyExit(({ id, exitCode }) => {
 function setupColSash(sashId: string, targetEl: HTMLElement, min: number, max: number) {
     const sash = document.getElementById(sashId)!;
     let dragging = false;
-    let dragOffset = 0; // track offset within sash where click occurred
-    
+    let startX = 0;
+    let startWidth = 0;
+
     sash.addEventListener('mousedown', (e) => {
         dragging = true;
+        startX = e.clientX;
+        startWidth = targetEl.offsetWidth;
         document.body.style.cursor = 'col-resize';
-        const rect = targetEl.parentElement!.getBoundingClientRect();
-        dragOffset = e.clientX - rect.left; // capture click position within sash
         e.preventDefault();
+        e.stopPropagation();
     });
-    
+
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        const rect = targetEl.parentElement!.getBoundingClientRect();
-        // Anchor to where user clicked on the sash, so boundary follows cursor exactly
-        const val = Math.min(Math.max(targetEl.offsetWidth + (e.clientX - (rect.left + dragOffset)), min), max);
-        targetEl.style.width = `${val}px`;
+        const deltaX = e.clientX - startX;
+        const newWidth = Math.min(Math.max(startWidth + deltaX, min), max);
+        targetEl.style.width = `${newWidth}px`;
         refreshTerminal();
     });
-    
-    window.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; } });
+
+    window.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            document.body.style.cursor = '';
+        }
+    });
 }
 
 function setupFlexColSash(sashId: string, targetEl: HTMLElement, min: number, max: number) {
     const sash = document.getElementById(sashId)!;
     let dragging = false;
-    let dragOffset = 0; // track offset within vertical-sash where click occurred
-    
+    let startX = 0;
+    let startWidth = 0;
+
     sash.addEventListener('mousedown', (e) => {
         dragging = true;
+        startX = e.clientX;
+        startWidth = targetEl.offsetWidth;
         document.body.style.cursor = 'col-resize';
-        const appEl = document.getElementById('app')!;
-        const appRect = appEl.getBoundingClientRect();
-        dragOffset = e.clientX - appRect.left - workspaceBar.offsetWidth - 4; // capture click position
         e.preventDefault();
+        e.stopPropagation();
     });
-    
+
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        const appEl = document.getElementById('app')!;
-        const appRect = appEl.getBoundingClientRect();
-        const wsWidth = workspaceBar.offsetWidth + 4; // include sash
-        // Anchor to click position on vertical-sash, so width adjusts from anchor point
-        const val = Math.min(Math.max(targetEl.offsetWidth + (e.clientX - (appRect.left + dragOffset)), min), max);
-        targetEl.style.flexBasis = `${val}px`;
+        const deltaX = e.clientX - startX;
+        const newWidth = Math.min(Math.max(startWidth + deltaX, min), max);
+        targetEl.style.flexBasis = `${newWidth}px`;
+        targetEl.style.flex = `0 0 ${newWidth}px`;
         refreshTerminal();
     });
-    
-    window.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; } });
+
+    window.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            document.body.style.cursor = '';
+        }
+    });
 }
 
 function setupRowSash(sashId: string, targetEl: HTMLElement, min: number, max: number) {
@@ -777,9 +934,227 @@ function setupRowSash(sashId: string, targetEl: HTMLElement, min: number, max: n
     window.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.cursor = ''; } });
 }
 
-setupColSash('workspace-sash', workspaceBar, 48, 280);
-setupFlexColSash('vertical-sash', document.getElementById('terminal-section')!, 200, window.innerWidth - 200);
-setupRowSash('horizontal-sash', document.getElementById('viewer-section')!, 60, window.innerHeight - 80);
+// Initialize sash resizing after DOM is ready
+function initializeSashes() {
+    setupColSash('workspace-sash', workspaceBar, 48, 280);
+    const terminalSection = document.getElementById('terminal-section')!;
+    setupFlexColSash('vertical-sash', terminalSection, 200, window.innerWidth - 200);
+    setupRowSash('horizontal-sash', document.getElementById('viewer-section')!, 60, window.innerHeight - 80);
+
+    // Set initial flex basis to match current rendered width
+    if (terminalSection.offsetWidth > 0) {
+        terminalSection.style.flexBasis = `${terminalSection.offsetWidth}px`;
+        terminalSection.style.flex = `0 0 ${terminalSection.offsetWidth}px`;
+    }
+}
+
+// Wait for DOM to be ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeSashes);
+} else {
+    initializeSashes();
+}
+
+// ─── Terminal Layout Rendering ─────────────────────────────────────────────────────
+
+function renderTerminalArea() {
+    const tabs = workspaceTerminalTabs.get(activeWorkspaceId || '') || [];
+
+    // Update layout button states
+    document.querySelectorAll('.layout-btn').forEach(btn => {
+        btn.classList.toggle('active', (btn as HTMLElement).dataset.layout === currentLayout.mode);
+    });
+
+    // Clear terminal pane
+    terminalPaneEl.innerHTML = '';
+    terminalPaneEl.className = '';
+
+    if (tabs.length === 0) {
+        return; // empty state shown separately
+    }
+
+    switch (currentLayout.mode) {
+        case 'tabs':
+            renderTabsMode(tabs);
+            break;
+        case 'horizontal':
+            renderSplitMode(tabs, 'row');
+            break;
+        case 'vertical':
+            renderSplitMode(tabs, 'column');
+            break;
+        case 'grid':
+            renderGridMode(tabs);
+            break;
+    }
+
+    // Re-attach terminal elements to new DOM positions
+    tabs.forEach(tab => {
+        const container = document.getElementById(`terminal-container-${tab.id}`);
+        if (container && tab.terminal.element !== container) {
+            container.appendChild(tab.terminal.element);
+            tab.fitAddon.fit();
+        }
+    });
+}
+
+function renderTabsMode(tabs: TerminalTab[]) {
+    // Tab mode: show only active terminal
+    terminalPaneEl.classList.remove('grid-layout', 'horizontal-layout', 'vertical-layout');
+    const activeTab = tabs.find(t => t.id === activeTerminalTabId) || tabs[0];
+    if (activeTab) {
+        const container = document.createElement('div');
+        container.id = `terminal-container-${activeTab.id}`;
+        container.className = 'terminal-container';
+        container.style.cssText = 'height: 100%; width: 100%;';
+        terminalPaneEl.appendChild(container);
+    }
+}
+
+function renderSplitMode(tabs: TerminalTab[], direction: 'row' | 'column') {
+    terminalPaneEl.classList.add(direction === 'row' ? 'horizontal-layout' : 'vertical-layout');
+    terminalPaneEl.classList.remove('grid-layout');
+
+    tabs.forEach(tab => {
+        const cell = createGridCell(tab);
+        terminalPaneEl.appendChild(cell);
+    });
+}
+
+function renderGridMode(tabs: TerminalTab[]) {
+    terminalPaneEl.classList.add('grid-layout');
+    terminalPaneEl.classList.remove('horizontal-layout', 'vertical-layout');
+
+    const cols = currentLayout.columns || 2;
+    terminalPaneEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+    tabs.forEach(tab => {
+        const cell = createGridCell(tab);
+        terminalPaneEl.appendChild(cell);
+    });
+}
+
+function createGridCell(tab: TerminalTab): HTMLElement {
+    const cell = document.createElement('div');
+    cell.className = 'grid-cell';
+    cell.dataset.tabId = tab.id;
+
+    // Make cell draggable
+    cell.draggable = true;
+
+    // Header with tab name and close button
+    const header = document.createElement('div');
+    header.className = 'grid-cell-header';
+
+    const label = document.createElement('span');
+    label.textContent = tab.name;
+    label.className = 'grid-cell-label';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'close-cell-btn';
+    closeBtn.textContent = '×';
+    closeBtn.title = 'Close terminal';
+    closeBtn.addEventListener('click', () => closeTerminalTab(tab.id));
+
+    header.appendChild(label);
+    header.appendChild(closeBtn);
+
+    // Content container for terminal
+    const content = document.createElement('div');
+    content.className = 'grid-cell-content';
+    content.id = `terminal-container-${tab.id}`;
+
+    cell.appendChild(header);
+    cell.appendChild(content);
+
+    // Drag events
+    cell.addEventListener('dragstart', (e) => {
+        e.dataTransfer!.setData('text/plain', tab.id);
+        cell.style.opacity = '0.5';
+    });
+
+    cell.addEventListener('dragend', () => {
+        cell.style.opacity = '1';
+        document.querySelectorAll('.grid-cell-header').forEach(h => h.classList.remove('drag-over'));
+    });
+
+    cell.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const targetHeader = cell.querySelector('.grid-cell-header') as HTMLElement;
+        if (targetHeader) targetHeader.classList.add('drag-over');
+    });
+
+    cell.addEventListener('dragleave', () => {
+        const targetHeader = cell.querySelector('.grid-cell-header') as HTMLElement;
+        if (targetHeader) targetHeader.classList.remove('drag-over');
+    });
+
+    cell.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const draggedTabId = e.dataTransfer!.getData('text/plain');
+        const targetHeader = cell.querySelector('.grid-cell-header') as HTMLElement;
+        if (targetHeader) targetHeader.classList.remove('drag-over');
+
+        if (draggedTabId && draggedTabId !== tab.id) {
+            swapTerminalTabs(draggedTabId, tab.id);
+        }
+    });
+
+    // Click to activate
+    cell.addEventListener('click', (e) => {
+        if (e.target === cell || e.target === header || e.target === label) {
+            activeTerminalTabId = tab.id;
+            renderTerminalTabs();
+        }
+    });
+
+    return cell;
+}
+
+function swapTerminalTabs(tabId1: string, tabId2: string) {
+    const tabs = workspaceTerminalTabs.get(activeWorkspaceId || '') || [];
+    const i1 = tabs.findIndex(t => t.id === tabId1);
+    const i2 = tabs.findIndex(t => t.id === tabId2);
+
+    if (i1 >= 0 && i2 >= 0) {
+        // Swap positions
+        [tabs[i1], tabs[i2]] = [tabs[i2], tabs[i1]];
+        workspaceTerminalTabs.set(activeWorkspaceId || '', tabs);
+        renderTerminalArea();
+    }
+}
+
+function closeTerminalTab(tabId: string) {
+    const tabs = workspaceTerminalTabs.get(activeWorkspaceId || '') || [];
+    const index = tabs.findIndex(t => t.id === tabId);
+
+    if (index >= 0) {
+        const tab = tabs[index];
+
+        // Kill PTY
+        window.electronAPI.ptyKill({ id: tab.ptyId });
+
+        // Dispose terminal
+        tab.terminal.dispose();
+
+        // Remove from array
+        tabs.splice(index, 1);
+        workspaceTerminalTabs.set(activeWorkspaceId || '', tabs);
+
+        // Set new active tab
+        if (activeTerminalTabId === tabId) {
+            activeTerminalTabId = tabs.length > 0 ? tabs[0].id : null;
+        }
+
+        // Update UI
+        if (tabs.length === 0) {
+            emptyState.classList.remove('hidden');
+        }
+
+        renderTerminalTabs();
+        renderTerminalArea();
+    }
+}
 
 function refreshTerminal() {
     if (activeFitAddon) {
@@ -945,4 +1320,163 @@ const DEFAULT_THEME: Theme = {
 // Override default theme with guaranteed contrast versions
 { Object.assign(THEMES.dark, DEFAULT_THEME); }
 { Object.assign(THEMES['tokyo-night'], DEFAULT_THEME as any); }
+
+// ─── Terminal Tabs ─────────────────────────────────────────────────────────────
+
+const terminalTabsHeader = document.getElementById('terminal-tabs-header')!;
+const terminalTabsList = document.getElementById('terminal-tabs-list')!;
+const terminalTabAdd = document.getElementById('terminal-tab-add')!;
+
+terminalTabAdd.addEventListener('click', () => {
+    if (!activeWorkspaceId) return;
+    createTerminalTab();
+});
+
+// Layout control buttons
+document.querySelectorAll('.layout-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const layout = (btn as HTMLElement).dataset.layout as LayoutMode;
+        if (layout) setLayoutMode(layout);
+    });
+});
+
+function getTerminalTabs(workspaceId: string): TerminalTab[] {
+    if (!workspaceTerminalTabs.has(workspaceId)) {
+        workspaceTerminalTabs.set(workspaceId, []);
+    }
+    return workspaceTerminalTabs.get(workspaceId)!;
+}
+
+function renderTerminalTabs() {
+    if (!activeWorkspaceId) {
+        terminalTabsHeader.classList.add('hidden');
+        return;
+    }
+
+    terminalTabsHeader.classList.remove('hidden');
+    terminalTabsList.innerHTML = '';
+
+    const tabs = getTerminalTabs(activeWorkspaceId);
+
+    tabs.forEach(tab => {
+        const tabEl = document.createElement('div');
+        tabEl.className = 'terminal-tab' + (tab.id === activeTerminalTabId ? ' active' : '');
+        tabEl.dataset.tabId = tab.id;
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'terminal-tab-name';
+        nameEl.textContent = tab.name;
+        tabEl.appendChild(nameEl);
+
+        const closeEl = document.createElement('span');
+        closeEl.className = 'terminal-tab-close';
+        closeEl.textContent = '×';
+        closeEl.title = 'Close tab';
+        closeEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeTerminalTab(tab.id);
+        });
+        tabEl.appendChild(closeEl);
+
+        tabEl.addEventListener('click', () => switchTerminalTab(tab.id));
+        terminalTabsList.appendChild(tabEl);
+    });
+
+    // Update terminal area layout
+    renderTerminalArea();
+}
+
+async function createTerminalTab(name?: string) {
+    if (!activeWorkspaceId) return;
+
+    const ws = workspaces.find(w => w.id === activeWorkspaceId)!;
+    const tabs = getTerminalTabs(activeWorkspaceId);
+
+    const tabId = `tab-${activeWorkspaceId}-${Date.now()}`;
+    const tabName = name || `Terminal ${tabs.length + 1}`;
+    const ptyId = `pty-${tabId}`;
+
+    // Create terminal element
+    const termContainer = document.createElement('div');
+    termContainer.className = 'terminal-container';
+    termContainer.id = `terminal-${tabId}`;
+    termContainer.style.display = 'none';
+    terminalPaneEl.appendChild(termContainer);
+
+    // Create xterm.js instance
+    const term = new Terminal({
+        fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+        fontSize: 13,
+        lineHeight: 1.2,
+        cursorBlink: true,
+        theme: THEMES[currentTheme],
+    });
+
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon());
+    term.open(termContainer);
+
+    // Create PTY
+    const { cols, rows } = term;
+    await window.electronAPI.ptyCreate({ id: ptyId, cwd: ws.path, cols, rows });
+
+    // Handle input
+    term.onData((data) => {
+        window.electronAPI.ptyInput({ id: ptyId, data });
+    });
+
+    // Create tab object
+    const tab: TerminalTab = {
+        id: tabId,
+        name: tabName,
+        ptyId,
+        terminal: term,
+        fitAddon,
+        element: termContainer,
+    };
+
+    tabs.push(tab);
+    switchTerminalTab(tabId);
+    renderTerminalTabs();
+
+    return tab;
+}
+
+function switchTerminalTab(tabId: string) {
+    const tabs = getTerminalTabs(activeWorkspaceId!);
+    const tab = tabs.find(t => t.id === tabId);
+
+    if (!tab) return;
+
+    // In tabs mode, hide/show terminals; in other layouts, all are visible
+    if (currentLayout.mode === 'tabs') {
+        tabs.forEach(t => {
+            t.element.style.display = 'none';
+            t.terminal.element?.classList.add('hidden');
+        });
+
+        tab.element.style.display = 'block';
+        tab.terminal.element?.classList.remove('hidden');
+    }
+
+    // Update state
+    activeTerminalTabId = tabId;
+    activeTerm = tab.terminal;
+    activeFitAddon = tab.fitAddon;
+    activePtyId = tab.ptyId;
+
+    // Fit terminal
+    requestAnimationFrame(() => {
+        tab.fitAddon.fit();
+        window.electronAPI.ptyResize({
+            id: tab.ptyId,
+            cols: tab.terminal.cols,
+            rows: tab.terminal.rows,
+        });
+        tab.terminal.focus();
+    });
+
+    renderTerminalTabs();
+}
 
