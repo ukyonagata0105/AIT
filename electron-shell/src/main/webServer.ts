@@ -4,6 +4,59 @@ import * as path from 'path';
 import * as os from 'os';
 import { PtyManager } from './infrastructure/PtyManager';
 
+// ─── Shared State Management ─────────────────────────────────────────────────────
+
+// Serializable terminal tab info for sync
+interface SyncTerminalTab {
+    id: string;
+    name: string;
+    ptyId: string;
+    workspaceId: string;
+}
+
+interface SharedState {
+    activeWorkspaceId: string | null;
+    openFilePaths: string[];
+    selectedFile: string | null;
+    terminalTabs: SyncTerminalTab[];
+    activeTerminalTabId: string | null;
+}
+
+
+const sharedState: SharedState = {
+    activeWorkspaceId: null,
+    openFilePaths: [],
+    selectedFile: null,
+    terminalTabs: [],
+    activeTerminalTabId: null
+};
+
+
+const wsClients = new Set<any>();
+
+function broadcastState() {
+    const message = JSON.stringify({
+        type: 'state-sync',
+        state: sharedState
+    });
+    wsClients.forEach(client => {
+        if (client.readyState === 1) { // OPEN
+            client.send(message);
+        }
+    });
+}
+
+export function updateSharedState(updates: Partial<SharedState>): void {
+    Object.assign(sharedState, updates);
+    broadcastState();
+}
+
+export function getSharedState(): SharedState {
+    return { ...sharedState };
+}
+
+// ─── PTY Management ───────────────────────────────────────────────────────────────
+
 // Shared PTY manager - set from main process
 let sharedPtyManager: PtyManager | null = null;
 
@@ -18,6 +71,14 @@ function getPtyManager(): PtyManager {
 export function startWebServer(port: number = 4096): void {
     const app = express();
     const server = http.createServer(app);
+
+    // CORS headers for web mode
+    app.use((req, res, next) => {
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Content-Type');
+        next();
+    });
 
     // Serve static files from dist/renderer
     const rendererPath = path.join(__dirname, '..', 'renderer');
@@ -131,6 +192,15 @@ export function startWebServer(port: number = 4096): void {
 
         const pty = getPtyManager();
 
+        // Track this client for broadcasting
+        wsClients.add(ws);
+
+        // Send current state to new client
+        ws.send(JSON.stringify({
+            type: 'state-sync',
+            state: sharedState
+        }));
+
         // Auto-attach to existing PTY if any (sync with Electron)
         const existingSessions = pty.getSessionIds();
         if (existingSessions.length > 0) {
@@ -139,7 +209,7 @@ export function startWebServer(port: number = 4096): void {
             console.log(`[WebServer] Auto-syncing with existing PTY: ${currentPtyId}`);
             ws.send(JSON.stringify({ type: 'sync', ptyId: currentPtyId, sessions: existingSessions }));
         }
-        
+
         pty.on('data', dataHandler);
         pty.on('exit', exitHandler);
         ws.on('message', (message: string) => {
@@ -179,6 +249,11 @@ export function startWebServer(port: number = 4096): void {
                             pty.kill(msg.id);
                         }
                         break;
+                    case 'state-update':
+                        // Client is updating shared state
+                        updateSharedState(msg.state || {});
+                        console.log('[WebServer] State updated:', msg.state);
+                        break;
                 }
             } catch (e) {
                 console.error('[WebServer] Error processing message:', e);
@@ -187,6 +262,7 @@ export function startWebServer(port: number = 4096): void {
 
         ws.on('close', () => {
             console.log('[WebServer] Client disconnected');
+            wsClients.delete(ws);
             pty.off('data', dataHandler);
             pty.off('exit', exitHandler);
             if (currentPtyId && !isSharedSession) {
@@ -196,6 +272,15 @@ export function startWebServer(port: number = 4096): void {
                 console.log(`[WebServer] Client detached from shared PTY: ${currentPtyId} (keeping PTY alive)`);
             }
         });
+    });
+
+    server.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`[WebServer] Port ${port} is already in use. Web server not started.`);
+            console.error(`[WebServer] Kill the existing process with: lsof -ti:${port} | xargs kill`);
+        } else {
+            console.error('[WebServer] Server error:', err.message);
+        }
     });
 
     server.listen(port, '0.0.0.0', () => {

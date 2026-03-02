@@ -39,6 +39,7 @@ declare const window: Window & {
         extSearch: (query: string) => Promise<any>;
         serverGetStatus: () => Promise<{ running: boolean; port: number; localIp: string; networkIps: string[]; error: string | null }>;
         onExtensionInstall?: (callback: (id: string) => void) => void;
+        stateUpdate?: (state: any) => void;
     };
 };
 
@@ -553,6 +554,302 @@ settingsAddWs.addEventListener('click', async () => {
     }
 });
 
+// ─── WebSocket State Sync (for web mode) ───────────────────────────────────────
+
+let stateWs: WebSocket | null = null;
+
+// Detect if running in Electron
+const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
+
+function connectStateWebSocket() {
+    // Only connect in web mode (not Electron)
+    if (isElectron) {
+        return; // Electron mode - use IPC instead
+    }
+
+    // Check if we're accessing via web server
+    const isWebMode = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+
+    if (!isWebMode) return;
+
+    const wsUrl = `ws://${window.location.hostname}:4096`;
+    stateWs = new WebSocket(wsUrl);
+
+    stateWs.onopen = () => {
+        console.log('[StateSync] Connected to server');
+    };
+
+    stateWs.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'state-sync') {
+                handleStateSync(msg.state);
+            } else if (msg.type === 'data') {
+                // PTY data - write to terminal
+                for (const [, tabs] of workspaceTerminalTabs) {
+                    const tab = tabs.find(t => t.ptyId === msg.id);
+                    if (tab) {
+                        tab.terminal.write(msg.data);
+                        return;
+                    }
+                }
+            } else if (msg.type === 'exit') {
+                // PTY exit
+                for (const [, tabs] of workspaceTerminalTabs) {
+                    const tab = tabs.find(t => t.ptyId === msg.id);
+                    if (tab) {
+                        tab.terminal.write(`\r\n\x1b[90m[exited: ${msg.exitCode}]\x1b[0m\r\n`);
+                        return;
+                    }
+                }
+            } else if (msg.type === 'sync') {
+                // Initial PTY sync - auto-attach to existing PTY
+                if (msg.ptyId) {
+                    activePtyId = msg.ptyId;
+                }
+
+                // Create terminals for all sessions (web mode only)
+                if (msg.sessions && !isElectron) {
+                    // Ensure we have workspace data first
+                    if (!activeWorkspaceId) {
+                        // Load workspaces first, then create terminals
+                        fetch('/api/workspaces')
+                            .then(r => r.json())
+                            .then((data: Workspace[]) => {
+                                workspaces = data;
+                                if (data.length > 0) {
+                                    activeWorkspaceId = data[0].id;
+                                    const ws = data[0];
+                                    workspaceHeading.textContent = ws.name;
+                                    renderWorkspaceBar();
+                                }
+
+                                // Now create terminals
+                                msg.sessions.forEach((ptyId: string, index: number) => {
+                                    setTimeout(() => {
+                                        createWebTerminalTab(ptyId, index);
+                                    }, index * 100);
+                                });
+                                setTimeout(() => {
+                                    renderTerminalTabs();
+                                    renderTerminalArea();
+                                }, msg.sessions.length * 100 + 50);
+                            })
+                            .catch(e => console.error('[StateSync] Failed to load workspaces:', e));
+                    } else {
+                        // Workspace already set, just create terminals
+                        msg.sessions.forEach((ptyId: string, index: number) => {
+                            setTimeout(() => {
+                                createWebTerminalTab(ptyId, index);
+                            }, index * 100);
+                        });
+                        setTimeout(() => {
+                            renderTerminalTabs();
+                            renderTerminalArea();
+                        }, msg.sessions.length * 100 + 50);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[StateSync] Error parsing message:', e);
+        }
+    };
+
+    stateWs.onclose = () => {
+        console.log('[StateSync] Disconnected, reconnecting in 3s...');
+        stateWs = null;
+        setTimeout(connectStateWebSocket, 3000);
+    };
+
+    stateWs.onerror = (error) => {
+        console.error('[StateSync] WebSocket error:', error);
+    };
+}
+
+function handleStateSync(state: any) {
+    console.log('[StateSync] Received state:', state);
+
+    if (state.activeWorkspaceId && state.activeWorkspaceId !== activeWorkspaceId) {
+        activeWorkspaceId = state.activeWorkspaceId;
+
+        // In web mode, we need to load workspaces data and create terminal displays
+        if (!isElectron) {
+            fetch('/api/workspaces')
+                .then(r => r.json())
+                .then((data: Workspace[]) => {
+                    workspaces = data;
+
+                    const ws = workspaces.find(w => w.id === activeWorkspaceId);
+                    if (ws) {
+                        workspaceHeading.textContent = ws.name;
+                        emptyState.classList.add('hidden');
+                        renderWorkspaceBar();
+
+                        // Use terminalTabs from state if available, otherwise fallback to PTY list
+                        if (state.terminalTabs && state.terminalTabs.length > 0) {
+                            // Create tabs from synced state (with names)
+                            const workspaceTabs = state.terminalTabs.filter(
+                                (tab: any) => tab.workspaceId === activeWorkspaceId
+                            );
+                            workspaceTabs.forEach((tab: any, index: number) => {
+                                createWebTerminalTab(tab.ptyId, index, tab.name, tab.id);
+                            });
+                            if (state.activeTerminalTabId) {
+                                activeTerminalTabId = state.activeTerminalTabId;
+                            }
+                            renderTerminalTabs();
+                            renderTerminalArea();
+                        } else {
+                            // Fallback: Request active PTY sessions from server
+                            return fetch('/api/pty/list');
+                        }
+                    }
+                })
+                .then(r => r?.json ? r.json() : null)
+                .then((ptyData: { sessions: string[] } | null) => {
+                    if (ptyData && ptyData.sessions.length > 0) {
+                        console.log('[StateSync] Fallback PTY sessions:', ptyData.sessions);
+                        ptyData.sessions.forEach((ptyId, index) => {
+                            createWebTerminalTab(ptyId, index);
+                        });
+                        renderTerminalTabs();
+                        renderTerminalArea();
+                    }
+                })
+                .catch(e => console.error('[StateSync] Failed to load state:', e));
+        } else {
+            renderWorkspaceBar();
+            renderTerminalTabs();
+            renderTerminalArea();
+        }
+    } else if (state.terminalTabs && !isElectron) {
+        // Tab-only update (workspace didn't change)
+        const workspaceTabs = state.terminalTabs.filter(
+            (tab: any) => tab.workspaceId === activeWorkspaceId
+        );
+        
+        // Get current tabs for this workspace
+        const currentTabs = getTerminalTabs(activeWorkspaceId || '');
+        const currentPtyIds = new Set(currentTabs.map(t => t.ptyId));
+        
+        // Create tabs that don't exist yet
+        workspaceTabs.forEach((tab: any, index: number) => {
+            if (!currentPtyIds.has(tab.ptyId)) {
+                createWebTerminalTab(tab.ptyId, index, tab.name, tab.id);
+            }
+        });
+        
+        if (state.activeTerminalTabId) {
+            activeTerminalTabId = state.activeTerminalTabId;
+        }
+        
+        renderTerminalTabs();
+        renderTerminalArea();
+    }
+}
+
+// Create a web terminal tab (for viewing existing PTY)
+function createWebTerminalTab(ptyId: string, index: number, name?: string, id?: string) {
+    if (!activeWorkspaceId) {
+        console.log('[WebTerminal] No active workspace, skipping terminal creation');
+        return;
+    }
+
+    const tabId = id || `web-tab-${ptyId}`;
+    const tabName = name || `Terminal ${index + 1}`;
+
+    // Check if tab already exists
+    const tabs = getTerminalTabs(activeWorkspaceId);
+    if (tabs.find(t => t.ptyId === ptyId)) {
+        return; // Already exists
+    }
+
+    // Create terminal element
+    const termContainer = document.createElement('div');
+    termContainer.className = 'terminal-container';
+    termContainer.id = `terminal-${tabId}`;
+    termContainer.style.display = 'none';
+    terminalPaneEl.appendChild(termContainer);
+
+    // Create xterm.js instance
+    const term = new Terminal({
+        fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+        fontSize: 13,
+        lineHeight: 1.2,
+        cursorBlink: true,
+        theme: THEMES[currentTheme],
+    });
+
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(termContainer);
+
+    // Handle input - send via WebSocket
+    term.onData((data) => {
+        if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+            stateWs.send(JSON.stringify({
+                type: 'input',
+                id: ptyId,
+                data
+            }));
+        }
+    });
+
+    // Create tab object
+    const tab: TerminalTab = {
+        id: tabId,
+        name: tabName,
+        ptyId,
+        terminal: term,
+        fitAddon,
+        element: termContainer,
+    };
+
+    tabs.push(tab);
+
+    // Switch to first tab
+    if (index === 0) {
+        switchTerminalTab(tabId);
+    }
+}
+
+function sendStateUpdate() {
+    // Collect serializable terminal tab info
+    const allTabs: { id: string; name: string; ptyId: string; workspaceId: string }[] = [];
+    workspaceTerminalTabs.forEach((tabs, workspaceId) => {
+        tabs.forEach(tab => {
+            allTabs.push({
+                id: tab.id,
+                name: tab.name,
+                ptyId: tab.ptyId,
+                workspaceId
+            });
+        });
+    });
+
+    const stateUpdate = {
+        activeWorkspaceId,
+        terminalTabs: allTabs,
+        activeTerminalTabId
+    };
+
+    // Electron mode: use IPC
+    if (window.electronAPI && window.electronAPI.stateUpdate) {
+        window.electronAPI.stateUpdate(stateUpdate);
+    }
+    // Web mode: use WebSocket
+    else if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+        stateWs.send(JSON.stringify({
+            type: 'state-update',
+            state: stateUpdate
+        }));
+    }
+}
+
+
+// Initialize WebSocket connection on load
+connectStateWebSocket();
+
 // ─── Extensions Management ──────────────────────────────────────────────────
 
 async function installExtension(id: string) {
@@ -576,8 +873,8 @@ async function installExtension(id: string) {
     setTimeout(() => { extStatus.style.display = 'none'; }, 6000);
 }
 
-// Ensure window.electronAPI.onExtensionInstall is bound
-if (window.electronAPI.onExtensionInstall) {
+// Ensure window.electronAPI.onExtensionInstall is bound (Electron only)
+if (window.electronAPI && window.electronAPI.onExtensionInstall) {
     window.electronAPI.onExtensionInstall((id: string) => installExtension(id));
 }
 
@@ -631,6 +928,9 @@ async function switchWorkspace(wsId: string) {
     }
 
     loadExplorer(ws.path, ws.name);
+
+    // Broadcast state change to other clients
+    sendStateUpdate();
 }
 
 // ─── File Explorer ────────────────────────────────────────────────────────────
@@ -711,7 +1011,19 @@ function sortEntries(entries: { name: string; isDir: boolean; mtime: number; siz
 
 async function renderDir(dirPath: string, container: HTMLElement, depth: number) {
     try {
-        const raw = await window.electronAPI.fsReadDir(dirPath) as { name: string; isDir: boolean; mtime: number; size: number }[];
+        let raw: { name: string; isDir: boolean; mtime: number; size: number }[];
+
+        if (window.electronAPI && window.electronAPI.fsReadDir) {
+            // Electron mode
+            raw = await window.electronAPI.fsReadDir(dirPath) as { name: string; isDir: boolean; mtime: number; size: number }[];
+        } else {
+            // Web mode - use HTTP API
+            const response = await fetch(`/api/fs/readDir?path=${encodeURIComponent(dirPath)}`);
+            if (!response.ok) {
+                throw new Error(`Failed to read directory: ${response.statusText}`);
+            }
+            raw = await response.json();
+        }
         // Only filter dotfiles at root when no filter active
         const entries = depth === 0 && !explorerSort.filter
             ? raw.filter(e => !e.name.startsWith('.'))
@@ -820,7 +1132,20 @@ async function openFile(filePath: string, itemEl: HTMLElement) {
     viewerFilepath.textContent = filePath.split('/').slice(-2).join('/');
     viewerContent.innerHTML = '';
     try {
-        const content = await window.electronAPI.fsReadFile(filePath);
+        let content: string;
+
+        if (window.electronAPI && window.electronAPI.fsReadFile) {
+            // Electron mode
+            content = await window.electronAPI.fsReadFile(filePath);
+        } else {
+            // Web mode - use HTTP API
+            const response = await fetch(`/api/fs/readFile?path=${encodeURIComponent(filePath)}`);
+            if (!response.ok) {
+                throw new Error(`Failed to read file: ${response.statusText}`);
+            }
+            content = await response.text();
+        }
+
         const pre = document.createElement('pre');
         pre.textContent = content;
         viewerContent.appendChild(pre);
@@ -831,7 +1156,9 @@ async function openFile(filePath: string, itemEl: HTMLElement) {
 
 // ─── PTY IPC ─────────────────────────────────────────────────────────────────
 
-window.electronAPI.onPtyData(({ id, data }) => {
+// Only in Electron mode
+if (window.electronAPI && window.electronAPI.onPtyData) {
+    window.electronAPI.onPtyData(({ id, data }) => {
     // Find the terminal tab with this PTY ID
     for (const [, tabs] of workspaceTerminalTabs) {
         const tab = tabs.find(t => t.ptyId === id);
@@ -842,19 +1169,23 @@ window.electronAPI.onPtyData(({ id, data }) => {
     }
     // Fallback to active terminal
     if (id === activePtyId) activeTerm?.write(data);
-});
-window.electronAPI.onPtyExit(({ id, exitCode }) => {
-    // Find the terminal tab with this PTY ID
-    for (const [, tabs] of workspaceTerminalTabs) {
-        const tab = tabs.find(t => t.ptyId === id);
-        if (tab) {
-            tab.terminal.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
-            return;
+    });
+}
+
+if (window.electronAPI && window.electronAPI.onPtyExit) {
+    window.electronAPI.onPtyExit(({ id, exitCode }) => {
+        // Find the terminal tab with this PTY ID
+        for (const [, tabs] of workspaceTerminalTabs) {
+            const tab = tabs.find(t => t.ptyId === id);
+            if (tab) {
+                tab.terminal.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
+                return;
+            }
         }
-    }
-    // Fallback to active terminal
-    if (id === activePtyId) activeTerm?.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
-});
+        // Fallback to active terminal
+        if (id === activePtyId) activeTerm?.write(`\r\n\x1b[90m[exited: ${exitCode}]\x1b[0m\r\n`);
+    });
+}
 
 // ─── Sash resizing ────────────────────────────────────────────────────────────
 
@@ -941,12 +1272,7 @@ function initializeSashes() {
     setupFlexColSash('vertical-sash', terminalSection, 200, window.innerWidth - 200);
     setupRowSash('horizontal-sash', document.getElementById('viewer-section')!, 60, window.innerHeight - 80);
 
-    // Set initial flex basis to match current rendered width
-    if (terminalSection.offsetWidth > 0) {
-        terminalSection.style.flexBasis = `${terminalSection.offsetWidth}px`;
-        terminalSection.style.flex = `0 0 ${terminalSection.offsetWidth}px`;
     }
-}
 
 // Wait for DOM to be ready
 if (document.readyState === 'loading') {
@@ -989,13 +1315,25 @@ function renderTerminalArea() {
     }
 
     // Re-attach terminal elements to new DOM positions
+    const reattached: TerminalTab[] = [];
     tabs.forEach(tab => {
         const container = document.getElementById(`terminal-container-${tab.id}`);
-        if (container && tab.terminal.element !== container) {
+        if (container) {
             container.appendChild(tab.terminal.element);
-            tab.fitAddon.fit();
+            reattached.push(tab);
         }
     });
+
+    if (reattached.length > 0) {
+        requestAnimationFrame(() => {
+            reattached.forEach(tab => {
+                try {
+                    tab.fitAddon.fit();
+                    resizePty(tab.ptyId, tab.terminal.cols, tab.terminal.rows);
+                } catch { /* ignore */ }
+            });
+        });
+    }
 }
 
 function renderTabsMode(tabs: TerminalTab[]) {
@@ -1103,8 +1441,7 @@ function createGridCell(tab: TerminalTab): HTMLElement {
     // Click to activate
     cell.addEventListener('click', (e) => {
         if (e.target === cell || e.target === header || e.target === label) {
-            activeTerminalTabId = tab.id;
-            renderTerminalTabs();
+            switchTerminalTab(tab.id);
         }
     });
 
@@ -1132,7 +1469,18 @@ function closeTerminalTab(tabId: string) {
         const tab = tabs[index];
 
         // Kill PTY
-        window.electronAPI.ptyKill({ id: tab.ptyId });
+        if (window.electronAPI && window.electronAPI.ptyKill) {
+            // Electron mode
+            window.electronAPI.ptyKill({ id: tab.ptyId });
+        } else {
+            // Web mode
+            if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+                stateWs.send(JSON.stringify({
+                    type: 'kill',
+                    id: tab.ptyId
+                }));
+            }
+        }
 
         // Dispose terminal
         tab.terminal.dispose();
@@ -1153,20 +1501,45 @@ function closeTerminalTab(tabId: string) {
 
         renderTerminalTabs();
         renderTerminalArea();
+
+        // Sync state to web clients
+        sendStateUpdate();
+    }
+}
+
+function resizePty(ptyId: string, cols: number, rows: number): void {
+    if (window.electronAPI && window.electronAPI.ptyResize) {
+        window.electronAPI.ptyResize({ id: ptyId, cols, rows });
+    } else if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+        stateWs.send(JSON.stringify({ type: 'resize', id: ptyId, cols, rows }));
     }
 }
 
 function refreshTerminal() {
-    if (activeFitAddon) {
+    const tabs = workspaceTerminalTabs.get(activeWorkspaceId || '') || [];
+
+    if (currentLayout.mode === 'tabs') {
+        if (activeFitAddon) {
+            requestAnimationFrame(() => {
+                try {
+                    activeFitAddon!.fit();
+                    if (activePtyId && activeTerm) {
+                        resizePty(activePtyId, activeTerm.cols, activeTerm.rows);
+                    }
+                } catch { /* ignore */ }
+            });
+        }
+    } else {
         requestAnimationFrame(() => {
-            try {
-                activeFitAddon!.fit();
-                if (activePtyId && activeTerm) {
-                    window.electronAPI.ptyResize({ id: activePtyId, cols: activeTerm.cols, rows: activeTerm.rows });
-                }
-            } catch { /* ignore */ }
+            tabs.forEach(tab => {
+                try {
+                    tab.fitAddon.fit();
+                    resizePty(tab.ptyId, tab.terminal.cols, tab.terminal.rows);
+                } catch { /* ignore */ }
+            });
         });
     }
+
     renderWorkspaceBar();
 }
 
@@ -1299,12 +1672,42 @@ function routeFileOpen(filePath: string) {
 
 async function init() {
     applyTheme(currentTheme);
-    workspaces = await window.electronAPI.workspacesLoad();
-    renderWorkspaceBar();
-    if (workspaces.length > 0) switchWorkspace(workspaces[0].id);
+
+    // Electron mode: load workspaces from API
+    if (window.electronAPI && window.electronAPI.workspacesLoad) {
+        workspaces = await window.electronAPI.workspacesLoad();
+        renderWorkspaceBar();
+        if (workspaces.length > 0) switchWorkspace(workspaces[0].id);
+    }
+    // Web mode: load workspaces from HTTP API
+    else {
+        try {
+            const response = await fetch('/api/workspaces');
+            workspaces = await response.json();
+            renderWorkspaceBar();
+            if (workspaces.length > 0) switchWorkspace(workspaces[0].id);
+        } catch (e) {
+            console.error('[Init] Failed to load workspaces:', e);
+        }
+    }
 }
 
 init();
+
+// ─── Web Mode UI Adjustments ─────────────────────────────────────────────────────
+
+if (!isElectron) {
+    // Add remote control indicator
+    const header = document.querySelector('#terminal-tabs-header') as HTMLElement;
+    if (header) {
+        const indicator = document.createElement('span');
+        indicator.style.cssText = 'font-size: 11px; color: var(--text-muted); margin-right: 12px;';
+        indicator.textContent = '📡 Remote Control Mode';
+        header.insertBefore(indicator, terminalTabsList);
+    }
+
+    console.log('[WebMode] Running in remote control mode (can create terminals)');
+}
 
 // ─── Fixed Themes with Guaranteed Contrast (Default Overrides) ─────────────────────────────────
 const DEFAULT_THEME: Theme = {
@@ -1326,6 +1729,7 @@ const DEFAULT_THEME: Theme = {
 const terminalTabsHeader = document.getElementById('terminal-tabs-header')!;
 const terminalTabsList = document.getElementById('terminal-tabs-list')!;
 const terminalTabAdd = document.getElementById('terminal-tab-add')!;
+
 
 terminalTabAdd.addEventListener('click', () => {
     if (!activeWorkspaceId) return;
@@ -1389,7 +1793,12 @@ function renderTerminalTabs() {
 async function createTerminalTab(name?: string) {
     if (!activeWorkspaceId) return;
 
-    const ws = workspaces.find(w => w.id === activeWorkspaceId)!;
+    const ws = workspaces.find(w => w.id === activeWorkspaceId);
+    if (!ws) {
+        console.error('[Terminal] Workspace not found');
+        return null;
+    }
+
     const tabs = getTerminalTabs(activeWorkspaceId);
 
     const tabId = `tab-${activeWorkspaceId}-${Date.now()}`;
@@ -1417,13 +1826,54 @@ async function createTerminalTab(name?: string) {
     term.loadAddon(new WebLinksAddon());
     term.open(termContainer);
 
-    // Create PTY
+    // Create PTY (different methods for Electron vs Web)
     const { cols, rows } = term;
-    await window.electronAPI.ptyCreate({ id: ptyId, cwd: ws.path, cols, rows });
+
+    try {
+        if (window.electronAPI && window.electronAPI.ptyCreate) {
+            // Electron mode
+            const result = await window.electronAPI.ptyCreate({ id: ptyId, cwd: ws.path, cols, rows });
+            if (!result.ok) {
+                throw new Error('PTY creation failed');
+            }
+        } else {
+            // Web mode - create PTY via WebSocket
+            if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+                stateWs.send(JSON.stringify({
+                    type: 'create',
+                    id: ptyId,
+                    cwd: ws.path,
+                    cols,
+                    rows
+                }));
+            } else {
+                console.error('[Terminal] WebSocket not connected');
+                termContainer.remove();
+                return null;
+            }
+        }
+    } catch (error) {
+        console.error('[Terminal] Failed to create PTY:', error);
+        termContainer.remove();
+        alert(`Failed to create terminal: ${error}`);
+        return null;
+    }
 
     // Handle input
     term.onData((data) => {
-        window.electronAPI.ptyInput({ id: ptyId, data });
+        if (window.electronAPI && window.electronAPI.ptyInput) {
+            // Electron mode
+            window.electronAPI.ptyInput({ id: ptyId, data });
+        } else {
+            // Web mode
+            if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+                stateWs.send(JSON.stringify({
+                    type: 'input',
+                    id: ptyId,
+                    data
+                }));
+            }
+        }
     });
 
     // Create tab object
@@ -1439,6 +1889,9 @@ async function createTerminalTab(name?: string) {
     tabs.push(tab);
     switchTerminalTab(tabId);
     renderTerminalTabs();
+
+    // Sync state to web clients
+    sendStateUpdate();
 
     return tab;
 }
@@ -1466,17 +1919,35 @@ function switchTerminalTab(tabId: string) {
     activeFitAddon = tab.fitAddon;
     activePtyId = tab.ptyId;
 
+    // Sync state to web clients (activeTerminalTabId changed)
+    sendStateUpdate();
+
     // Fit terminal
     requestAnimationFrame(() => {
         tab.fitAddon.fit();
-        window.electronAPI.ptyResize({
-            id: tab.ptyId,
-            cols: tab.terminal.cols,
-            rows: tab.terminal.rows,
-        });
+
+        // Resize PTY
+        if (window.electronAPI && window.electronAPI.ptyResize) {
+            // Electron mode
+            window.electronAPI.ptyResize({
+                id: tab.ptyId,
+                cols: tab.terminal.cols,
+                rows: tab.terminal.rows,
+            });
+        } else {
+            // Web mode
+            if (stateWs && stateWs.readyState === WebSocket.OPEN) {
+                stateWs.send(JSON.stringify({
+                    type: 'resize',
+                    id: tab.ptyId,
+                    cols: tab.terminal.cols,
+                    rows: tab.terminal.rows
+                }));
+            }
+        }
+
         tab.terminal.focus();
     });
 
     renderTerminalTabs();
 }
-

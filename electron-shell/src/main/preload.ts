@@ -82,4 +82,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('search:files', options),
     searchRipgrep: (options: { path: string; pattern: string; args: string[] }) =>
         ipcRenderer.invoke('search:ripgrep', options),
+
+    // State sync for web mode
+    stateUpdate: (state: any) => ipcRenderer.send('state:update', state),
 });

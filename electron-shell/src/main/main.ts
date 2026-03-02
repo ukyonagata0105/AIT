@@ -7,7 +7,7 @@ import * as https from 'https';
 import { PtyManager } from './infrastructure/PtyManager';
 import { PlaywrightAltMcp } from './mcpServer';
 import { deploySkillsToWorkspace, deployGlobalSkills, markShutdown } from './skillsManager';
-import { startWebServer, setSharedPtyManager } from './webServer';
+import { startWebServer, setSharedPtyManager, updateSharedState } from './webServer';
 const CONFIG_PATH = path.join(os.homedir(), '.ai-terminal-ide', 'workspaces.json');
 
 // Enable remote debugging for Playwright ALT integration
@@ -124,10 +124,15 @@ app.on('web-contents-created', (_event, contents) => {
 
 // Terminal: create a new PTY session
 ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; cols: number; rows: number }) => {
-    // Auto-deploy skills from ~/.ai-terminal-ide/skills.json to this workspace
-    deploySkillsToWorkspace(args.cwd);
-    ptyManager.create(args);
-    return { ok: true };
+    try {
+        // Auto-deploy skills from ~/.ai-terminal-ide/skills.json to this workspace
+        deploySkillsToWorkspace(args.cwd);
+        ptyManager.create(args);
+        return { ok: true };
+    } catch (error) {
+        console.error('[PTY] Failed to create PTY:', error);
+        return { ok: false, error: String(error) };
+    }
 });
 
 // Terminal: send input to PTY
@@ -247,6 +252,11 @@ ipcMain.handle('server:getStatus', async () => {
         networkIps: serverStatus.networkIps,
         error: serverStatus.error
     };
+});
+
+// State sync: update shared state for web clients
+ipcMain.on('state:update', (_event, stateUpdate: any) => {
+    updateSharedState(stateUpdate);
 });
 
 // Shell: open file in system default application
