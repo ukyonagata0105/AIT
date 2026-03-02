@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: macos-latest
@@ -26,6 +29,12 @@ jobs:
 
       - name: Build DMG
         working-directory: electron-shell
-        run: npx electron-builder --mac --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            electron-shell/release/*.dmg
+            electron-shell/release/*.blockmap
+            electron-shell/release/latest-mac.yml
