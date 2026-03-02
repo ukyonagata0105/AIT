@@ -1,40 +1,41 @@
-# AI Terminal IDE
+<p align="center">
+  <img src="./electron-shell/assets/screenshot-main.png" alt="AI Terminal IDE" width="100%">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
+<h1 align="center">AI Terminal IDE</h1>
+
+<p align="center">
+  A terminal-first IDE for agentic coding workflows
+</p>
+
+<p align="center">
+  <a href="https://github.com/ukyonagata0105/AIT/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
+  <a href="https://github.com/ukyonagata0105/AIT/releases"><img src="https://img.shields.io/badge/platform-macOS-lightgrey.svg" alt="Platform"></a>
+</p>
+
+<p align="center">
+  <a href="#english">English</a> | <a href="#日本語">日本語</a>
+</p>
 
 ---
 
 ## English
 
-### Overview
+AI Terminal IDE is a terminal-first IDE designed for developers who use agentic coding tools like OpenCode and Claude Code CLI. It provides a stress-free, terminal-focused coding environment with remote access capabilities.
 
-**AI Terminal IDE** is a terminal-first IDE designed for developers who use agentic coding tools (OpenCode, Claude Code CLI) for intellectual production. It provides a stress-free, terminal-focused coding environment with the ability to continue work remotely from external devices.
+### Features
 
-![Main Interface](./electron-shell/assets/screenshot-main.png)
-
-### Key Features
-
-- **Terminal-First Design**: Built on `xterm.js` and `node-pty` for native terminal experience
-- **Multi-Project Management**: Slack-like workspace bar for switching between projects instantly
-- **Remote Access**: Web mode allows controlling the IDE from external devices via browser
-- **Broadcast Mode**: Send keystrokes to all workspace terminals simultaneously
-- **Integrated File Explorer**: Browse and preview files directly in the IDE
-- **Built-in Browser Panel**: Embedded webview for documentation/research without leaving the IDE
-- **Theme Support**: Multiple themes including Dark, Tokyo Night, Light, Solarized
-
-### UI Layout
-
-![Browser Panel](./electron-shell/assets/screenshot-browser.png)
-
-1. **Left Workspace Bar**: Switch between projects instantly
-2. **Central Terminal**: Primary interactive area with tab-based interface
-3. **Bottom Broadcast Bar**: Mirror keystrokes across all terminals
-4. **Right Panel**: File explorer, image viewer, PDF viewer, and browser
+- **Terminal-First Design** — Built on `xterm.js` and `node-pty` for native terminal experience
+- **Multi-Project Management** — Slack-like workspace bar for instant project switching
+- **Remote Access** — Web mode allows controlling the IDE from external devices
+- **Broadcast Mode** — Send keystrokes to all workspace terminals simultaneously
+- **Integrated File Explorer** — Browse and preview files directly in the IDE
+- **Built-in Browser Panel** — Embedded webview for documentation without leaving the IDE
+- **Theme Support** — Dark, Tokyo Night, Light, Solarized and more
 
 ### Installation
 
-#### Download DMG (Recommended)
+#### Download (Recommended)
 
 Download the latest DMG installer from [Releases](https://github.com/ukyonagata0105/AIT/releases).
 
@@ -48,26 +49,20 @@ cd AIT/electron-shell
 # Install dependencies
 npm install
 
-# Build the app
-npm run build
-
-# Start the application
-npm run start
+# Build and run
+npm run build && npm run start
 ```
 
 ### Development
 
 ```bash
-# Development mode with hot reload
-npm run dev
-
-# Run tests
-npm test
+npm run dev      # Development mode with hot reload
+npm test         # Run tests
 ```
 
-### Remote Access (Web Mode)
+### Remote Access
 
-Start the IDE with web mode to enable remote access:
+Start with web mode to enable remote access:
 
 ```bash
 npm run start:web
@@ -79,34 +74,21 @@ Then access from any browser: `http://YOUR_IP:4096`
 
 ## 日本語
 
-### 概要
+AI Terminal IDE は、OpenCode や Claude Code CLI などのエージェンティックコーディングツールを使用する開発者のために設計されたターミナルファーストのIDEです。ストレスなくターミナルに集中したコーディングを行いながら、外部からもホストマシンを操作できるリモートアクセス機能を提供します。
 
-**AI Terminal IDE** は、エージェンティックコーディング（OpenCode、Claude Code CLI）を活用した知的生産を行う開発者のために設計されたターミナルファーストのIDEです。ストレスなくターミナルに集中したコーディングを行いながら、外部からもホストマシンを操作して作業を継続できる仕組みを提供します。
+### 機能
 
-![メイン画面](./electron-shell/assets/screenshot-main.png)
-
-### 主な機能
-
-- **ターミナルファーストデザイン**: `xterm.js` と `node-pty` によるネイティブなターミナル体験
-- **マルチプロジェクト管理**: Slackライクなワークスペースバーでプロジェクト間を瞬時に切り替え
-- **リモートアクセス**: ブラウザ経由で外部デバイスからIDEを操作可能なWebモード
-- **ブロードキャストモード**: 全ワークスペースのターミナルに同時にキーストロークを送信
-- **統合ファイルエクスプローラー**: IDE内でファイルをブラウズ・プレビュー
-- **内蔵ブラウザパネル**: IDEを離れずにドキュメントやリサーチが可能
-- **テーマ対応**: ダーク、Tokyo Night、ライト、Solarized など複数のテーマをサポート
-
-### UIレイアウト
-
-![ブラウザパネル](./electron-shell/assets/screenshot-browser.png)
-
-1. **左ワークスペースバー**: プロジェクト間を瞬時に切り替え
-2. **中央ターミナル**: タブベースのメイン操作エリア
-3. **下部ブロードキャストバー**: 全ターミナルにキーストロークを同期
-4. **右パネル**: ファイルエクスプローラー、画像ビューア、PDFビューア、ブラウザ
+- **ターミナルファーストデザイン** — `xterm.js` と `node-pty` によるネイティブなターミナル体験
+- **マルチプロジェクト管理** — Slackライクなワークスペースバーで瞬時にプロジェクト切替
+- **リモートアクセス** — ブラウザ経由で外部デバイスからIDEを操作可能
+- **ブロードキャストモード** — 全ワークスペースのターミナルに同時にキーストロークを送信
+- **統合ファイルエクスプローラー** — IDE内でファイルをブラウズ・プレビュー
+- **内蔵ブラウザパネル** — IDEを離れずにドキュメントやリサーチが可能
+- **テーマ対応** — ダーク、Tokyo Night、ライト、Solarized など
 
 ### インストール
 
-#### DMGからインストール（推奨）
+#### ダウンロード（推奨）
 
 [Releases](https://github.com/ukyonagata0105/AIT/releases) から最新のDMGインストーラーをダウンロードしてください。
 
@@ -120,24 +102,18 @@ cd AIT/electron-shell
 # 依存関係をインストール
 npm install
 
-# ビルド
-npm run build
-
-# 起動
-npm run start
+# ビルドして起動
+npm run build && npm run start
 ```
 
 ### 開発
 
 ```bash
-# ホットリロード付き開発モード
-npm run dev
-
-# テスト実行
-npm test
+npm run dev      # ホットリロード付き開発モード
+npm test         # テスト実行
 ```
 
-### リモートアクセス（Webモード）
+### リモートアクセス
 
 Webモードで起動するとリモートアクセスが有効になります：
 
@@ -151,16 +127,19 @@ npm run start:web
 
 ## Tech Stack
 
-- **Electron** - Cross-platform desktop apps
-- **xterm.js** - Terminal emulator component
-- **node-pty** - Pseudo terminal for Node.js
-- **esbuild** - Fast bundler
-- **TypeScript** - Type-safe JavaScript
+| Technology | Description |
+|------------|-------------|
+| Electron | Cross-platform desktop apps |
+| xterm.js | Terminal emulator component |
+| node-pty | Pseudo terminal for Node.js |
+| esbuild | Fast bundler |
+| TypeScript | Type-safe JavaScript |
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+[MIT](LICENSE)
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
