@@ -1,11 +1,15 @@
 <p align="center">
-  <img src="./electron-shell/assets/screenshot-main.png" alt="AI Terminal IDE" width="100%">
+  <img src="./logo.svg" alt="TermNexus" width="128">
 </p>
 
-<h1 align="center">AI Terminal IDE</h1>
+<h1 align="center">TermNexus</h1>
 
 <p align="center">
-  A terminal-first IDE for agentic coding workflows
+  <strong>for CLI LLM Coding Agents</strong>
+</p>
+
+<p align="center">
+  A friendly terminal for everyone
 </p>
 
 <p align="center">
@@ -21,17 +25,22 @@
 
 ## English
 
-AI Terminal IDE is a terminal-first IDE designed for developers who use agentic coding tools like OpenCode and Claude Code CLI. It provides a stress-free, terminal-focused coding environment with remote access capabilities.
+TermNexus is a friendly terminal app for people who are new to the command line. Whether you're using AI coding assistants like Claude Code or OpenCode, managing projects with git, or just need to run occasional terminal commands — TermNexus makes it easy and stress-free.
+
+**Perfect for:**
+- Non-developers who occasionally use terminal commands
+- People using AI coding assistants (Claude Code, OpenCode, Cursor)
+- Anyone who wants a visual, approachable terminal experience
+- Teams who need remote access to their terminal from other devices
 
 ### Features
 
-- **Terminal-First Design** — Built on `xterm.js` and `node-pty` for native terminal experience
-- **Multi-Project Management** — Slack-like workspace bar for instant project switching
-- **Remote Access** — Web mode allows controlling the IDE from external devices
-- **Broadcast Mode** — Send keystrokes to all workspace terminals simultaneously
-- **Integrated File Explorer** — Browse and preview files directly in the IDE
-- **Built-in Browser Panel** — Embedded webview for documentation without leaving the IDE
-- **Theme Support** — Dark, Tokyo Night, Light, Solarized and more
+- **Easy Project Switching** — Slack-like sidebar to switch between folders instantly
+- **Built-in File Browser** — Preview files without leaving the app
+- **Remote Access** — Control your terminal from a browser on another device
+- **Broadcast Mode** — Run the same command across multiple projects at once
+- **Dark & Light Themes** — Easy on the eyes, including Tokyo Night and Solarized
+- **Integrated Browser** — Look up documentation without switching apps
 
 ### Installation
 
@@ -74,17 +83,22 @@ Then access from any browser: `http://YOUR_IP:4096`
 
 ## 日本語
 
-AI Terminal IDE は、OpenCode や Claude Code CLI などのエージェンティックコーディングツールを使用する開発者のために設計されたターミナルファーストのIDEです。ストレスなくターミナルに集中したコーディングを行いながら、外部からもホストマシンを操作できるリモートアクセス機能を提供します。
+TermNexusは、ターミナルを少し触ったことがある人向けの、親しみやすいターミナルアプリです。Claude CodeやOpenCodeなどのAIコーディングアシスタントを使う方、gitでプロジェクト管理をする方、たまにコマンドを叩く方など — TermNexusならストレスなく簡単に使えます。
+
+**こんな方におすすめ:**
+- たまにターミナルを使う非エンジニアの方
+- AIコーディングアシスタントを使う方（Claude Code、OpenCode、Cursor）
+- 視覚的で使いやすいターミナルを求めている方
+- 外出先からターミナルにアクセスしたい方
 
 ### 機能
 
-- **ターミナルファーストデザイン** — `xterm.js` と `node-pty` によるネイティブなターミナル体験
-- **マルチプロジェクト管理** — Slackライクなワークスペースバーで瞬時にプロジェクト切替
-- **リモートアクセス** — ブラウザ経由で外部デバイスからIDEを操作可能
-- **ブロードキャストモード** — 全ワークスペースのターミナルに同時にキーストロークを送信
-- **統合ファイルエクスプローラー** — IDE内でファイルをブラウズ・プレビュー
-- **内蔵ブラウザパネル** — IDEを離れずにドキュメントやリサーチが可能
-- **テーマ対応** — ダーク、Tokyo Night、ライト、Solarized など
+- **簡単プロジェクト切替** — Slackライクなサイドバーでフォルダを瞬時に切り替え
+- **内蔵ファイルブラウザ** — アプリ内でファイルをプレビュー
+- **リモートアクセス** — 別デバイスのブラウザからターミナルを操作
+- **ブロードキャストモード** — 複数プロジェクトに同じコマンドを一括実行
+- **ダーク・ライトテーマ** — Tokyo Night、Solarizedなど目に優しいテーマ
+- **内蔵ブラウザ** — アプリを切り替えずにドキュメントを確認
 
 ### インストール
 

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#grad1)"/>
+  
+  <!-- Terminal window shape -->
+  <rect x="120" y="140" width="272" height="232" rx="16" fill="#1e1e2e"/>
+  <rect x="120" y="140" width="272" height="48" rx="16" fill="#313244"/>
+  <rect x="120" y="172" width="272" height="16" fill="#313244"/>
+  
+  <!-- Traffic lights -->
+  <circle cx="152" cy="164" r="8" fill="#f38ba8"/>
+  <circle cx="180" cy="164" r="8" fill="#f9e2af"/>
+  <circle cx="208" cy="164" r="8" fill="#a6e3a1"/>
+  
+  <!-- Terminal prompt lines -->
+  <text x="140" y="230" font-family="monospace" font-size="24" fill="#a6e3a1">&gt;_</text>
+  <rect x="180" y="212" width="120" height="4" rx="2" fill="#45475a"/>
+  <rect x="140" y="250" width="180" height="4" rx="2" fill="#45475a"/>
+  <rect x="140" y="274" width="140" height="4" rx="2" fill="#45475a"/>
+  <rect x="140" y="298" width="200" height="4" rx="2" fill="#45475a"/>
+  
+  <!-- Nexus connection nodes -->
+  <circle cx="90" cy="256" r="20" fill="url(#grad2)" opacity="0.9"/>
+  <circle cx="422" cy="256" r="20" fill="url(#grad2)" opacity="0.9"/>
+  <circle cx="256" cy="90" r="16" fill="url(#grad2)" opacity="0.9"/>
+  <circle cx="256" cy="422" r="16" fill="url(#grad2)" opacity="0.9"/>
+  
+  <!-- Connection lines -->
+  <line x1="110" y1="256" x2="120" y2="256" stroke="#22d3ee" stroke-width="3" opacity="0.7"/>
+  <line x1="392" y1="256" x2="402" y2="256" stroke="#22d3ee" stroke-width="3" opacity="0.7"/>
+  <line x1="256" y1="140" x2="256" y2="106" stroke="#22d3ee" stroke-width="3" opacity="0.7"/>
+  <line x1="256" y1="372" x2="256" y2="406" stroke="#22d3ee" stroke-width="3" opacity="0.7"/>
+</svg>
