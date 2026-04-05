@@ -1,0 +1,39 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - button "◀" [ref=e4] [cursor=pointer]
+    - generic [ref=e5]:
+      - generic [ref=e6]: ⚡ TermNexus
+      - generic [ref=e7]: Research_ZK_Snarks
+    - button "⚙️" [ref=e9] [cursor=pointer]
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic "/Volumes/UNTITLED/Obsidian/Academic_Research/Research_ZK_Snarks" [ref=e13] [cursor=pointer]:
+        - generic [ref=e14]: RE
+        - generic [ref=e15]: Research_ZK_Snarks
+      - generic "Add Workspace" [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]: +
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e22] [cursor=pointer]
+        - generic [ref=e25]
+        - button "+" [ref=e30] [cursor=pointer]
+        - generic [ref=e31]: 📡 Remote Control Mode
+      - generic [ref=e36]:
+        - textbox "Terminal input" [active] [ref=e138]
+        - generic [ref=e139]: ukyonagatamacstudio@UkyoNagata-Mac-Studio-4 Research_ZK_Snarks %
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e67]: No file open
+        - generic [ref=e68]
+      - generic [ref=e70]:
+        - generic [ref=e72]: RESEARCH_ZK_SNARKS
+        - generic [ref=e73]
+        - generic [ref=e80]
+    - generic [ref=e129]:
+      - generic "Explorer" [ref=e130] [cursor=pointer]: 📂
+      - generic "PDF Viewer" [ref=e131] [cursor=pointer]: 📄
+      - generic "Image Viewer" [ref=e132] [cursor=pointer]: 🖼️
+      - generic "Browser" [ref=e133] [cursor=pointer]: 🌐
+  - generic [ref=e135] [cursor=pointer]:
+    - checkbox "Broadcast" [ref=e136]
+    - generic [ref=e137]: Broadcast

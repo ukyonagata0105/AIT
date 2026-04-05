@@ -1,0 +1,103 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - button "◀" [ref=e4] [cursor=pointer]
+    - generic [ref=e5]:
+      - generic [ref=e6]: ⚡ TermNexus
+      - generic [ref=e7]: Research_ZK_Snarks
+    - button "⚙️" [ref=e9] [cursor=pointer]
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic "/Volumes/UNTITLED/Obsidian/Academic_Research/Research_ZK_Snarks" [ref=e13] [cursor=pointer]:
+        - generic [ref=e14]: RE
+        - generic [ref=e15]: Research_ZK_Snarks
+      - generic "Add Workspace" [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]: +
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e22] [cursor=pointer]:
+          - generic [ref=e23]: Terminal 1
+          - generic "Close tab" [ref=e24]: ×
+        - generic [ref=e25]:
+          - button "📑" [ref=e26] [cursor=pointer]
+          - button "◧" [ref=e27] [cursor=pointer]
+          - button "◨" [ref=e28] [cursor=pointer]
+          - button "▦" [ref=e29] [cursor=pointer]
+        - button "+" [ref=e30] [cursor=pointer]
+        - generic [ref=e31]: 📡 Remote Control Mode
+      - generic [ref=e36]:
+        - generic:
+          - textbox "Terminal input"
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e67]: No file open
+        - generic [ref=e68]:
+          - generic:
+            - generic: 📄
+            - generic: File Viewer
+            - generic: Click a file in the explorer
+      - generic [ref=e70]:
+        - generic [ref=e72]: RESEARCH_ZK_SNARKS
+        - generic [ref=e73]:
+          - textbox "🔍 Filter..." [ref=e74]
+          - generic [ref=e75]:
+            - button "Name" [ref=e76] [cursor=pointer]
+            - button "Type" [ref=e77] [cursor=pointer]
+            - button "Date" [ref=e78] [cursor=pointer]
+            - button "Size" [ref=e79] [cursor=pointer]
+        - generic [ref=e80]:
+          - generic [ref=e81] [cursor=pointer]:
+            - generic [ref=e82]: 📁
+            - generic [ref=e83]: codes
+          - generic [ref=e84] [cursor=pointer]:
+            - generic [ref=e85]: 📁
+            - generic [ref=e86]: experiments
+          - generic [ref=e87] [cursor=pointer]:
+            - generic [ref=e88]: 📁
+            - generic [ref=e89]: jjsce_v1.2
+          - generic [ref=e90] [cursor=pointer]:
+            - generic [ref=e91]: 📁
+            - generic [ref=e92]: jsai_5_0_1_template
+          - generic [ref=e93] [cursor=pointer]:
+            - generic [ref=e94]: 📁
+            - generic [ref=e95]: presentation
+          - generic [ref=e96] [cursor=pointer]:
+            - generic [ref=e97]: 📁
+            - generic [ref=e98]: recent_research
+          - generic [ref=e99] [cursor=pointer]:
+            - generic [ref=e100]: 📁
+            - generic [ref=e101]: scispace
+          - generic [ref=e102] [cursor=pointer]:
+            - generic [ref=e103]: 📁
+            - generic [ref=e104]: thesis_written
+          - generic [ref=e105] [cursor=pointer]:
+            - generic [ref=e106]: 📝
+            - generic [ref=e107]: _index.md
+          - generic [ref=e108] [cursor=pointer]:
+            - generic [ref=e109]: 📄
+            - generic [ref=e110]: 2025_Shourei_Shinseisho.docx
+          - generic [ref=e111] [cursor=pointer]:
+            - generic [ref=e112]: 📄
+            - generic [ref=e113]: how_to_paper_20250207.pdf
+          - generic [ref=e114] [cursor=pointer]:
+            - generic [ref=e115]: 📄
+            - generic [ref=e116]: jjsce_v1_2.zip
+          - generic [ref=e117] [cursor=pointer]:
+            - generic [ref=e118]: 📝
+            - generic [ref=e119]: response_to_review.md
+          - generic [ref=e120] [cursor=pointer]:
+            - generic [ref=e121]: 📝
+            - generic [ref=e122]: review_claude.md
+          - generic [ref=e123] [cursor=pointer]:
+            - generic [ref=e124]: 📝
+            - generic [ref=e125]: review_gemini.md
+          - generic [ref=e126] [cursor=pointer]:
+            - generic [ref=e127]: 📝
+            - generic [ref=e128]: review_glm.md
+    - generic [ref=e129]:
+      - generic "Explorer" [ref=e130] [cursor=pointer]: 📂
+      - generic "PDF Viewer" [ref=e131] [cursor=pointer]: 📄
+      - generic "Image Viewer" [ref=e132] [cursor=pointer]: 🖼️
+      - generic "Browser" [ref=e133] [cursor=pointer]: 🌐
+  - generic [ref=e135] [cursor=pointer]:
+    - checkbox "Broadcast" [ref=e136]
+    - generic [ref=e137]: Broadcast
