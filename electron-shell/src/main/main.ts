@@ -188,10 +188,17 @@ ipcMain.handle('workspaces:add', async () => {
     console.log('[workspace:add] dialog result:', result);
     if (!result.canceled && result.filePaths.length > 0) {
         const folderPath = result.filePaths[0];
+        const workspaces = loadWorkspaces();
+        const existingWorkspace = workspaces.find(w => w.path === folderPath);
+
+        if (existingWorkspace) {
+            console.log('[workspace:add] workspace already exists:', existingWorkspace);
+            return existingWorkspace;
+        }
+
         const name = path.basename(folderPath);
         const id = `ws-${Date.now()}`;
         const newWs: WorkspaceConfig = { id, name, path: folderPath };
-        const workspaces = loadWorkspaces();
         workspaces.push(newWs);
         saveWorkspaces(workspaces);
         console.log('[workspace:add] saved workspace:', newWs);
