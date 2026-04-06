@@ -128,7 +128,6 @@ electron-shell/
 │   │   ├── infrastructure/  # PtyManager
 │   │   ├── services/        # Config, Workspace, Terminal, File services
 │   │   ├── ipc/             # IPC handlers and registry
-│   │   ├── mcpServer.ts
 │   │   ├── main.ts          # Main entry point
 │   │   └── preload.ts       # Preload script with exposed APIs
 │   └── renderer/
