@@ -53,9 +53,9 @@ test.describe('AI Terminal IDE - Phase 1 Smoke Tests', () => {
         await expect(toggle).toBeVisible();
     });
 
-    test('terminal grid is rendered', async () => {
-        const grid = page.locator('#terminal-grid');
-        await expect(grid).toBeVisible();
+    test('terminal area is rendered', async () => {
+        const terminalPane = page.locator('#terminal-pane');
+        await expect(terminalPane).toBeVisible();
     });
 
     // ─── Workspace ──────────────────────────────────────────────────────────
@@ -149,8 +149,9 @@ test.describe('AI Terminal IDE - Phase 1 Smoke Tests', () => {
         const viewerSection = page.locator('#viewer-section');
         
         if (await horizontalSash.isVisible()) {
-            // Get initial height
-            const initialHeight = await viewerSection.evaluate((el) => el.offsetHeight);
+            const initialFlexBasis = await viewerSection.evaluate((el) => {
+                return window.getComputedStyle(el).flexBasis;
+            });
             
             // Drag the sash down to increase viewer section height
             const box = await horizontalSash.boundingBox();
@@ -160,9 +161,10 @@ test.describe('AI Terminal IDE - Phase 1 Smoke Tests', () => {
                 await page.mouse.move(box.x + box.width / 2, box.y + 50); // Drag down 50px
                 await page.mouse.up();
                 
-                // Height should have changed (increased or decreased based on drag direction)
-                const newHeight = await viewerSection.evaluate((el) => el.offsetHeight);
-                expect(newHeight).not.toBe(initialHeight);
+                const newFlexBasis = await viewerSection.evaluate((el) => {
+                    return window.getComputedStyle(el).flexBasis;
+                });
+                expect(newFlexBasis).not.toBe(initialFlexBasis);
             }
         }
     });

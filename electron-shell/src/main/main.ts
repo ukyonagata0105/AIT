@@ -10,8 +10,11 @@ import { deploySkillsToWorkspace, deployGlobalSkills, markShutdown } from './ski
 import { startWebServer, setSharedPtyManager, updateSharedState } from './webServer';
 const CONFIG_PATH = path.join(os.homedir(), '.ai-terminal-ide', 'workspaces.json');
 
-// Enable remote debugging for Playwright ALT integration
-app.commandLine.appendSwitch('remote-debugging-port', '9223');
+const isTestMode = process.env.NODE_ENV === 'test';
+
+if (!isTestMode) {
+    app.commandLine.appendSwitch('remote-debugging-port', '9223');
+}
 
 interface WorkspaceConfig {
     id: string;
@@ -460,11 +463,13 @@ if (isWebMode) {
     // Normal Electron mode - also start web server for remote access
     app.whenReady().then(() => {
         console.log('[App] Ready, creating window...');
-        deployGlobalSkills();
+        if (!isTestMode) {
+            deployGlobalSkills();
+        }
         createWindow();
         
         // Request folder access permissions for all workspaces
-        if (process.platform === 'darwin') {
+        if (!isTestMode && process.platform === 'darwin') {
             const workspaces = loadWorkspaces();
             for (const ws of workspaces) {
                 try {
@@ -477,21 +482,23 @@ if (isWebMode) {
             }
         }
     
-        // Start web server in normal mode too (for remote access)
-        try {
-            serverStatus.running = true;
-            serverStatus.networkIps = getNetworkIps();
-            setSharedPtyManager(ptyManager);
-            startWebServer(webPort);
-        } catch (e: any) {
-            serverStatus.running = false;
-            serverStatus.error = e.message;
-            console.error('Failed to start web server:', e);
+        if (!isTestMode) {
+            // Start web server in normal mode too (for remote access)
+            try {
+                serverStatus.running = true;
+                serverStatus.networkIps = getNetworkIps();
+                setSharedPtyManager(ptyManager);
+                startWebServer(webPort);
+            } catch (e: any) {
+                serverStatus.running = false;
+                serverStatus.error = e.message;
+                console.error('Failed to start web server:', e);
+            }
+            
+            // Start Playwright ALT MCP Server
+            const mcp = new PlaywrightAltMcp();
+            mcp.run().catch(err => console.error("Failed to run MCP server:", err));
         }
-        
-        // Start Playwright ALT MCP Server
-        const mcp = new PlaywrightAltMcp();
-        mcp.run().catch(err => console.error("Failed to run MCP server:", err));
     
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) createWindow();
