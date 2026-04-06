@@ -1,0 +1,54 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - button "◀" [ref=e4] [cursor=pointer]
+    - generic [ref=e5]:
+      - generic [ref=e6]: ⚡ TermNexus
+      - generic [ref=e7]: Research_ZK_Snarks
+    - button "⚙️" [ref=e9] [cursor=pointer]
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic "/Volumes/UNTITLED/Obsidian/Academic_Research/Research_ZK_Snarks" [ref=e13] [cursor=pointer]:
+        - generic [ref=e14]: RE
+        - generic [ref=e15]: Research_ZK_Snarks
+      - generic "Add Workspace" [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]: +
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e22] [cursor=pointer]:
+          - generic [ref=e23]: Terminal 1
+          - generic "Close tab" [ref=e24]: ×
+        - generic [ref=e25]:
+          - button "📑" [ref=e26] [cursor=pointer]
+          - button "◧" [ref=e27] [cursor=pointer]
+          - button "◨" [ref=e28] [cursor=pointer]
+          - button "▦" [ref=e29] [cursor=pointer]
+        - button "+" [ref=e30] [cursor=pointer]
+        - generic [ref=e31]: 📡 Remote Control Mode
+      - generic [ref=e36]:
+        - generic:
+          - textbox "Terminal input"
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e67]: No file open
+        - generic [ref=e68]:
+          - generic:
+            - generic: 📄
+            - generic: File Viewer
+            - generic: Click a file in the explorer
+      - generic [ref=e70]:
+        - generic [ref=e72]: EXPLORER
+        - generic [ref=e73]:
+          - textbox "🔍 Filter..." [ref=e74]
+          - generic [ref=e75]:
+            - button "Name" [ref=e76] [cursor=pointer]
+            - button "Type" [ref=e77] [cursor=pointer]
+            - button "Date" [ref=e78] [cursor=pointer]
+            - button "Size" [ref=e79] [cursor=pointer]
+    - generic [ref=e81]:
+      - generic "Explorer" [ref=e82] [cursor=pointer]: 📂
+      - generic "PDF Viewer" [ref=e83] [cursor=pointer]: 📄
+      - generic "Image Viewer" [ref=e84] [cursor=pointer]: 🖼️
+      - generic "Browser" [ref=e85] [cursor=pointer]: 🌐
+  - generic [ref=e87] [cursor=pointer]:
+    - checkbox "Broadcast" [ref=e88]
+    - generic [ref=e89]: Broadcast
