@@ -190,12 +190,6 @@ export const IPC_CHANNELS = {
   EXT_SEARCH: 'ext:search',
   EXTENSION_INSTALL: 'extension:install',
 
-  // Browser
-  BROWSER_NAVIGATE: 'browser:navigate',
-  BROWSER_SCREENSHOT: 'browser:screenshot',
-  BROWSER_CLICK: 'browser:click',
-  BROWSER_GET_DOM: 'browser:getDom',
-
   // Config
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',

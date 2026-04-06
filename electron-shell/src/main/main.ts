@@ -5,16 +5,10 @@ import * as os from 'os';
 import { exec } from 'child_process';
 import * as https from 'https';
 import { PtyManager } from './infrastructure/PtyManager';
-import { PlaywrightAltMcp } from './mcpServer';
-import { deploySkillsToWorkspace, deployGlobalSkills, markShutdown } from './skillsManager';
 import { startWebServer, setSharedPtyManager, updateSharedState } from './webServer';
 const CONFIG_PATH = path.join(os.homedir(), '.ai-terminal-ide', 'workspaces.json');
 
 const isTestMode = process.env.NODE_ENV === 'test';
-
-if (!isTestMode) {
-    app.commandLine.appendSwitch('remote-debugging-port', '9223');
-}
 
 interface WorkspaceConfig {
     id: string;
@@ -128,8 +122,6 @@ app.on('web-contents-created', (_event, contents) => {
 // Terminal: create a new PTY session
 ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; cols: number; rows: number }) => {
     try {
-        // Auto-deploy skills from ~/.ai-terminal-ide/skills.json to this workspace
-        deploySkillsToWorkspace(args.cwd);
         ptyManager.create(args);
         return { ok: true };
     } catch (error) {
@@ -327,78 +319,6 @@ ipcMain.handle('shell:showContextMenu', async (event, filePath: string, isDir: b
     return { action: 'shown' };
 });
 
-// ─── Browser Panel IPC (for MCP) ─────────────────────────────────────────────
-
-// Browser: navigate to URL
-ipcMain.handle('browser:navigate', async (_event, url: string) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('browser:doNavigate', url);
-        return { ok: true, url };
-    }
-    return { ok: false, error: 'No main window' };
-});
-
-// Browser: take screenshot
-ipcMain.handle('browser:screenshot', async () => {
-    return new Promise((resolve) => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-            resolve({ ok: false, error: 'No main window' });
-            return;
-        }
-        const handler = (_event: any, result: { ok: boolean; data?: string; error?: string }) => {
-            ipcMain.removeListener('browser:screenshotResult', handler);
-            resolve(result);
-        };
-        ipcMain.on('browser:screenshotResult', handler);
-        mainWindow.webContents.send('browser:doScreenshot');
-        setTimeout(() => {
-            ipcMain.removeListener('browser:screenshotResult', handler);
-            resolve({ ok: false, error: 'Screenshot timeout' });
-        }, 10000);
-    });
-});
-
-// Browser: click element
-ipcMain.handle('browser:click', async (_event, selector: string) => {
-    return new Promise((resolve) => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-            resolve({ ok: false, error: 'No main window' });
-            return;
-        }
-        const handler = (_event: any, result: { ok: boolean; error?: string }) => {
-            ipcMain.removeListener('browser:clickResult', handler);
-            resolve(result);
-        };
-        ipcMain.on('browser:clickResult', handler);
-        mainWindow.webContents.send('browser:doClick', selector);
-        setTimeout(() => {
-            ipcMain.removeListener('browser:clickResult', handler);
-            resolve({ ok: false, error: 'Click timeout' });
-        }, 10000);
-    });
-});
-
-// Browser: get DOM
-ipcMain.handle('browser:getDom', async () => {
-    return new Promise((resolve) => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-            resolve({ ok: false, error: 'No main window' });
-            return;
-        }
-        const handler = (_event: any, result: { ok: boolean; data?: string; error?: string }) => {
-            ipcMain.removeListener('browser:domResult', handler);
-            resolve(result);
-        };
-        ipcMain.on('browser:domResult', handler);
-        mainWindow.webContents.send('browser:doGetDom');
-        setTimeout(() => {
-            ipcMain.removeListener('browser:domResult', handler);
-            resolve({ ok: false, error: 'Get DOM timeout' });
-        }, 10000);
-    });
-});
-
-
 // Extensions: search VS Code Marketplace
 ipcMain.handle('ext:search', async (_event, query: string) => {
     const data = JSON.stringify({
@@ -458,10 +378,6 @@ if (isWebMode) {
         // Start web server
         setSharedPtyManager(ptyManager);
         startWebServer(webPort);
-        
-        // Start Playwright ALT MCP Server
-        const mcp = new PlaywrightAltMcp();
-        mcp.run().catch(err => console.error("Failed to run MCP server:", err));
     });
     
     // Don't quit when all windows are closed in web mode
@@ -470,9 +386,6 @@ if (isWebMode) {
     // Normal Electron mode - also start web server for remote access
     app.whenReady().then(() => {
         console.log('[App] Ready, creating window...');
-        if (!isTestMode) {
-            deployGlobalSkills();
-        }
         createWindow();
         
         // Request folder access permissions for all workspaces
@@ -501,10 +414,6 @@ if (isWebMode) {
                 serverStatus.error = e.message;
                 console.error('Failed to start web server:', e);
             }
-            
-            // Start Playwright ALT MCP Server
-            const mcp = new PlaywrightAltMcp();
-            mcp.run().catch(err => console.error("Failed to run MCP server:", err));
         }
     
         app.on('activate', () => {
@@ -523,9 +432,5 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
 
-// Mark shutdown before quitting to prevent EPIPE errors
-app.on('will-quit', () => {
-    markShutdown();
-});
 
 // Export for testing

@@ -128,20 +128,4 @@ export interface IpcBridge {
   onPtyExit: (callback: (data: { id: string; exitCode: number }) => void) => void;
   onExtensionInstall: (callback: (id: string) => void) => void;
 
-  // Browser Panel
-  browserNavigate: (url: string) => Promise<{ ok: boolean; url: string }>;
-  browserScreenshot: () => Promise<{ ok: boolean; data?: string; error?: string }>;
-  browserClick: (selector: string) => Promise<{ ok: boolean; error?: string }>;
-  browserGetDom: () => Promise<{ ok: boolean; data?: string; error?: string }>;
-
-  // Browser Panel Events (sent from main to renderer)
-  onBrowserNavigate: (callback: (url: string) => void) => void;
-  onBrowserScreenshot: (callback: () => void) => void;
-  onBrowserClick: (callback: (selector: string) => void) => void;
-  onBrowserGetDom: (callback: () => void) => void;
-
-  // Browser Panel Result Senders
-  sendScreenshotResult: (result: { ok: boolean; data?: string; error?: string }) => void;
-  sendClickResult: (result: { ok: boolean; error?: string }) => void;
-  sendDomResult: (result: { ok: boolean; data?: string; error?: string }) => void;
 }

@@ -12,9 +12,9 @@
         "dev": "concurrently \"npm run build:watch\" \"npm run electron:dev\"",
         "build": "node scripts/build.mjs",
         "build:dev": "node scripts/build.mjs --watch",
-        "build:shared": "esbuild src/shared/**/*.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --outdir=dist/shared --format=cjs --sourcemap --entry-names=[dir]/[name]",
-        "build:main": "esbuild src/main/main.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --external:@modelcontextprotocol/sdk --external:axios --external:express --external:ws --outdir=dist/main --format=cjs --sourcemap",
-        "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --external:electron --external:playwright-core --external:@modelcontextprotocol/sdk --outdir=dist/main --format=cjs --sourcemap",
+        "build:shared": "esbuild src/shared/**/*.ts --bundle --platform=node --external:electron --external:node-pty --outdir=dist/shared --format=cjs --sourcemap --entry-names=[dir]/[name]",
+        "build:main": "esbuild src/main/main.ts --bundle --platform=node --external:electron --external:node-pty --external:axios --external:express --external:ws --outdir=dist/main --format=cjs --sourcemap",
+        "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --external:electron --outdir=dist/main --format=cjs --sourcemap",
         "build:renderer": "esbuild src/renderer/index.ts --bundle --platform=browser --outdir=dist/renderer --sourcemap --loader:.css=css",
         "copy:html": "cp src/renderer/index.html dist/renderer/index.html",
         "build:watch": "concurrently \"npm run build:main -- --watch\" \"npm run build:preload -- --watch\" \"npm run build:renderer -- --watch\"",
@@ -26,7 +26,7 @@
         "test:unit:watch": "npm run build:test && chokidar 'src/**/*.ts' -c 'npm run build:test && npm run test:unit'",
         "test:e2e": "npm run build && playwright test",
         "test:e2e:headed": "npm run build && playwright test --headed",
-        "build:test": "esbuild src/test/run.ts src/test/utils.test.ts src/test/helpers.ts --bundle --platform=node --external:electron --external:node-pty --external:playwright-core --external:@modelcontextprotocol/sdk --external:express --external:ws --outdir=dist/test --format=cjs --sourcemap",
+        "build:test": "esbuild src/test/run.ts src/test/utils.test.ts src/test/helpers.ts --bundle --platform=node --external:electron --external:node-pty --external:express --external:ws --outdir=dist/test --format=cjs --sourcemap",
         "test:headed": "npm run build && playwright test --headed",
         "pack": "npm run build && electron-builder --dir",
         "dist": "npm run build && electron-builder"
@@ -48,13 +48,12 @@
         "wait-on": "^7.0.0"
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.27.1",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/addon-web-links": "^0.11.0",
         "@xterm/xterm": "^5.3.0",
         "axios": "^1.13.5",
+        "express": "^5.2.1",
         "node-pty": "^1.0.0",
-        "playwright-core": "^1.58.2",
         "ws": "^8.19.0"
     },
     "build": {

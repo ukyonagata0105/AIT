@@ -85,8 +85,6 @@ export class PtyManager extends EventEmitter {
         ...process.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
-        BROWSER_CDP_URL: 'http://localhost:9223',
-        BROWSER_TYPE: 'internal-browser',
         ...(env ?? {}),
       };
 
