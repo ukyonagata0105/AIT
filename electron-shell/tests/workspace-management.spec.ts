@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { cleanupTestContext, launchWithFixtures, TestContext } from './test-fixtures';
+import { cleanupTestContext, launchWithFixtures, readSavedWorkspaces, TestContext } from './test-fixtures';
 
 test.describe('Workspace Management', () => {
     let context: TestContext | null = null;
@@ -31,6 +31,24 @@ test.describe('Workspace Management', () => {
 
         await expect(secondWorkspace).toHaveClass(/active/);
         await expect(page.locator('#workspace-heading')).toHaveText('workspace-2');
+    });
+
+    test('does not duplicate a workspace when add returns an existing one', async () => {
+        const page = context!.page;
+        const savedWorkspaces = readSavedWorkspaces(context!);
+
+        await page.evaluate((existingWorkspace) => {
+            const electronApi = (window as typeof window & {
+                electronAPI: { workspacesAdd: () => Promise<unknown> };
+            }).electronAPI;
+
+            electronApi.workspacesAdd = async () => existingWorkspace;
+        }, savedWorkspaces[0]);
+
+        await page.locator('#workspace-add-btn').click();
+
+        await expect(page.locator('.workspace-item')).toHaveCount(2);
+        expect(readSavedWorkspaces(context!)).toHaveLength(2);
     });
 
 });

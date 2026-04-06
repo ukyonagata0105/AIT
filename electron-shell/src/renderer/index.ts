@@ -546,7 +546,12 @@ function addServerUrlItem(container: HTMLElement, label: string, url: string) {
 settingsAddWs.addEventListener('click', async () => {
     const ws = await window.electronAPI.workspacesAdd();
     if (ws) {
-        workspaces.push(ws);
+        const existingIndex = workspaces.findIndex(existing => existing.id === ws.id || existing.path === ws.path);
+        if (existingIndex >= 0) {
+            workspaces[existingIndex] = ws;
+        } else {
+            workspaces.push(ws);
+        }
         await window.electronAPI.workspacesSave(workspaces);
         renderWorkspaceBar();
         renderSettingsPanel();
@@ -885,7 +890,12 @@ if (window.electronAPI && window.electronAPI.onExtensionInstall) {
 addBtn.addEventListener('click', async () => {
     const ws = await window.electronAPI.workspacesAdd();
     if (ws) {
-        workspaces.push(ws);
+        const existingIndex = workspaces.findIndex(existing => existing.id === ws.id || existing.path === ws.path);
+        if (existingIndex >= 0) {
+            workspaces[existingIndex] = ws;
+        } else {
+            workspaces.push(ws);
+        }
         await window.electronAPI.workspacesSave(workspaces);
         renderWorkspaceBar();
         switchWorkspace(ws.id);

@@ -17,6 +17,7 @@ export interface TestContext {
     page: Page;
     homeDir: string;
     rootDir: string;
+    configPath: string;
     workspaces: TestWorkspace[];
 }
 
@@ -49,6 +50,7 @@ export async function launchWithFixtures(workspaceCount = 1): Promise<TestContex
         path.join(configDir, 'workspaces.json'),
         JSON.stringify(workspaces, null, 2),
     );
+    const configPath = path.join(configDir, 'workspaces.json');
 
     const electronApp = await electron.launch({
         args: ['.'],
@@ -63,7 +65,11 @@ export async function launchWithFixtures(workspaceCount = 1): Promise<TestContex
     const page = await electronApp.firstWindow();
     await page.waitForLoadState('domcontentloaded');
 
-    return { electronApp, page, homeDir, rootDir, workspaces };
+    return { electronApp, page, homeDir, rootDir, configPath, workspaces };
+}
+
+export function readSavedWorkspaces(context: TestContext): TestWorkspace[] {
+    return JSON.parse(fs.readFileSync(context.configPath, 'utf8')) as TestWorkspace[];
 }
 
 export async function cleanupTestContext(context: TestContext | null): Promise<void> {
