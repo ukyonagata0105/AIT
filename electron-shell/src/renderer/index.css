@@ -417,7 +417,8 @@ body {
   opacity: 1 !important;
 }
 
-#terminal-tab-add {
+#terminal-tab-add,
+#terminal-tab-add-tmux {
   width: 32px;
   height: 100%;
   border: none;
@@ -429,9 +430,16 @@ body {
   flex-shrink: 0;
 }
 
-#terminal-tab-add:hover {
+#terminal-tab-add:hover,
+#terminal-tab-add-tmux:hover {
   background: var(--bg-item-active);
   color: var(--text-main);
+}
+
+#terminal-tab-add-tmux {
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 /* ─── Layout Controls ──────────────────────────────────────────────────────────── */

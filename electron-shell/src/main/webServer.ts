@@ -224,7 +224,9 @@ export function startWebServer(port: number = 4096): void {
                             id: msg.id,
                             cwd: msg.cwd,
                             cols: msg.cols || 80,
-                            rows: msg.rows || 24
+                            rows: msg.rows || 24,
+                            shell: msg.shell,
+                            shellArgs: msg.shellArgs,
                         });
                         console.log(`[WebServer] Created remote PTY: ${msg.id}`);
                         break;

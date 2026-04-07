@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, nativeImag
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, spawnSync } from 'child_process';
 import * as https from 'https';
 import { PtyManager } from './infrastructure/PtyManager';
 import { startWebServer, setSharedPtyManager, updateSharedState } from './webServer';
@@ -120,7 +120,7 @@ app.on('web-contents-created', (_event, contents) => {
 // ─── IPC Handlers ──────────────────────────────────────────────────────────
 
 // Terminal: create a new PTY session
-ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; cols: number; rows: number }) => {
+ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; cols: number; rows: number; shell?: string; shellArgs?: string[] }) => {
     try {
         ptyManager.create(args);
         return { ok: true };
@@ -128,6 +128,11 @@ ipcMain.handle('pty:create', async (_event, args: { id: string; cwd: string; col
         console.error('[PTY] Failed to create PTY:', error);
         return { ok: false, error: String(error) };
     }
+});
+
+ipcMain.handle('tmux:isAvailable', async () => {
+    const result = spawnSync('tmux', ['-V'], { stdio: 'ignore' });
+    return { ok: result.status === 0 };
 });
 
 // Terminal: send input to PTY

@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
     // PTY operations
-    ptyCreate: (args: { id: string; cwd: string; cols: number; rows: number }) =>
+    ptyCreate: (args: { id: string; cwd: string; cols: number; rows: number; shell?: string; shellArgs?: string[] }) =>
         ipcRenderer.invoke('pty:create', args),
     ptyInput: (args: { id: string; data: string }) =>
         ipcRenderer.send('pty:input', args),
@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Server status
     serverGetStatus: () => ipcRenderer.invoke('server:getStatus'),
+    tmuxIsAvailable: () => ipcRenderer.invoke('tmux:isAvailable'),
 
     // Shell operations
     shellOpenExternal: (filePath: string) => ipcRenderer.invoke('shell:openExternal', filePath),

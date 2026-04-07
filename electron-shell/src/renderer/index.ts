@@ -22,7 +22,7 @@ interface Workspace {
 
 declare const window: Window & {
     electronAPI: {
-        ptyCreate: (a: { id: string; cwd: string; cols: number; rows: number }) => Promise<{ ok: boolean }>;
+        ptyCreate: (a: { id: string; cwd: string; cols: number; rows: number; shell?: string; shellArgs?: string[] }) => Promise<{ ok: boolean }>;
         ptyInput: (a: { id: string; data: string }) => void;
         ptyResize: (a: { id: string; cols: number; rows: number }) => void;
         ptyKill: (a: { id: string }) => void;
@@ -38,6 +38,7 @@ declare const window: Window & {
         execRun: (cmd: string) => Promise<{ stdout: string; stderr: string }>;
         extSearch: (query: string) => Promise<any>;
         serverGetStatus: () => Promise<{ running: boolean; port: number; localIp: string; networkIps: string[]; error: string | null }>;
+        tmuxIsAvailable?: () => Promise<{ ok: boolean }>;
         onExtensionInstall?: (callback: (id: string) => void) => void;
         stateUpdate?: (state: any) => void;
     };
@@ -50,6 +51,7 @@ let activeWorkspaceId: string | null = null;
 let activeTerm: Terminal | null = null;
 let activeFitAddon: FitAddon | null = null;
 let activePtyId: string | null = null;
+let tmuxAvailable = false;
 // Map workspace IDs to their saved terminal state (PTY ID + dimensions)
 const workspaceTerminalStates = new Map<string, TerminalState>();
 
@@ -1683,6 +1685,15 @@ function routeFileOpen(filePath: string) {
 async function init() {
     applyTheme(currentTheme);
 
+    if (window.electronAPI?.tmuxIsAvailable) {
+        try {
+            const result = await window.electronAPI.tmuxIsAvailable();
+            tmuxAvailable = result.ok;
+        } catch {
+            tmuxAvailable = false;
+        }
+    }
+
     // Electron mode: load workspaces from API
     if (window.electronAPI && window.electronAPI.workspacesLoad) {
         workspaces = await window.electronAPI.workspacesLoad();
@@ -1699,6 +1710,11 @@ async function init() {
         } catch (e) {
             console.error('[Init] Failed to load workspaces:', e);
         }
+    }
+
+    const terminalTabAddTmux = document.getElementById('terminal-tab-add-tmux') as HTMLButtonElement | null;
+    if (terminalTabAddTmux) {
+        terminalTabAddTmux.style.display = tmuxAvailable ? '' : 'none';
     }
 }
 
@@ -1739,11 +1755,17 @@ const DEFAULT_THEME: Theme = {
 const terminalTabsHeader = document.getElementById('terminal-tabs-header')!;
 const terminalTabsList = document.getElementById('terminal-tabs-list')!;
 const terminalTabAdd = document.getElementById('terminal-tab-add')!;
+const terminalTabAddTmux = document.getElementById('terminal-tab-add-tmux') as HTMLButtonElement | null;
 
 
 terminalTabAdd.addEventListener('click', () => {
     if (!activeWorkspaceId) return;
     createTerminalTab();
+});
+
+terminalTabAddTmux?.addEventListener('click', () => {
+    if (!activeWorkspaceId || !tmuxAvailable) return;
+    createTerminalTab(undefined, 'tmux');
 });
 
 // Layout control buttons
@@ -1800,7 +1822,16 @@ function renderTerminalTabs() {
     renderTerminalArea();
 }
 
-async function createTerminalTab(name?: string) {
+function getTmuxSessionName(workspace: Workspace): string {
+    const base = `${workspace.name}-${workspace.id}`
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40);
+    return `termnexus-${base || 'workspace'}`;
+}
+
+async function createTerminalTab(name?: string, mode: 'shell' | 'tmux' = 'shell') {
     if (!activeWorkspaceId) return;
 
     const ws = workspaces.find(w => w.id === activeWorkspaceId);
@@ -1812,7 +1843,7 @@ async function createTerminalTab(name?: string) {
     const tabs = getTerminalTabs(activeWorkspaceId);
 
     const tabId = `tab-${activeWorkspaceId}-${Date.now()}`;
-    const tabName = name || `Terminal ${tabs.length + 1}`;
+    const tabName = name || (mode === 'tmux' ? 'tmux' : `Terminal ${tabs.length + 1}`);
     const ptyId = `pty-${tabId}`;
 
     // Create terminal element
@@ -1842,7 +1873,18 @@ async function createTerminalTab(name?: string) {
     try {
         if (window.electronAPI && window.electronAPI.ptyCreate) {
             // Electron mode
-            const result = await window.electronAPI.ptyCreate({ id: ptyId, cwd: ws.path, cols, rows });
+            const result = await window.electronAPI.ptyCreate({
+                id: ptyId,
+                cwd: ws.path,
+                cols,
+                rows,
+                ...(mode === 'tmux'
+                    ? {
+                        shell: 'tmux',
+                        shellArgs: ['new-session', '-A', '-s', getTmuxSessionName(ws)],
+                    }
+                    : {}),
+            });
             if (!result.ok) {
                 throw new Error('PTY creation failed');
             }
@@ -1854,7 +1896,13 @@ async function createTerminalTab(name?: string) {
                     id: ptyId,
                     cwd: ws.path,
                     cols,
-                    rows
+                    rows,
+                    ...(mode === 'tmux'
+                        ? {
+                            shell: 'tmux',
+                            shellArgs: ['new-session', '-A', '-s', getTmuxSessionName(ws)],
+                        }
+                        : {}),
                 }));
             } else {
                 console.error('[Terminal] WebSocket not connected');

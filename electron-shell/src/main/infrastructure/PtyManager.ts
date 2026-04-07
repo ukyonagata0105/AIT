@@ -22,6 +22,7 @@ interface PtyCreateOptions {
   cols: number;
   rows: number;
   shell?: string;
+  shellArgs?: string[];
   env?: Record<string, string>;
 }
 
@@ -72,7 +73,7 @@ export class PtyManager extends EventEmitter {
    * Create a new PTY session
    */
   create(options: PtyCreateOptions): Result<void> {
-    const { id, cwd, cols, rows, shell, env } = options;
+    const { id, cwd, cols, rows, shell, shellArgs, env } = options;
 
     // Kill existing session if any
     if (this.sessions.has(id)) {
@@ -96,7 +97,7 @@ export class PtyManager extends EventEmitter {
         rows,
       });
 
-      const p = pty.spawn(shellToUse, [], {
+      const p = pty.spawn(shellToUse, shellArgs ?? [], {
         name: 'xterm-256color',
         cols: cols || 80,
         rows: rows || 24,

@@ -97,7 +97,7 @@ export interface FileSortState {
 
 export interface IpcBridge {
   // Terminal
-  ptyCreate: (args: { id: string; cwd: string; cols: number; rows: number }) => Promise<{ ok: boolean }>;
+  ptyCreate: (args: { id: string; cwd: string; cols: number; rows: number; shell?: string; shellArgs?: string[] }) => Promise<{ ok: boolean }>;
   ptyInput: (args: { id: string; data: string }) => void;
   ptyResize: (args: { id: string; cols: number; rows: number }) => void;
   ptyKill: (args: { id: string }) => void;
@@ -122,6 +122,7 @@ export interface IpcBridge {
 
   // Extensions
   extSearch: (query: string) => Promise<any>;
+  tmuxIsAvailable: () => Promise<{ ok: boolean }>;
 
   // Listeners
   onPtyData: (callback: (data: { id: string; data: string }) => void) => void;

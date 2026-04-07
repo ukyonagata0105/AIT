@@ -31,6 +31,24 @@ test.describe('Terminal Tabs Management', () => {
         await expect(tabs).toHaveCount(initialCount + 1);
     });
 
+    test('creates a tmux-backed terminal tab when tmux is available', async () => {
+        const page = context!.page;
+        const tmuxButton = page.locator('#terminal-tab-add-tmux');
+
+        if (!(await tmuxButton.isVisible())) {
+            await expect(tmuxButton).not.toBeVisible();
+            return;
+        }
+
+        const tabs = page.locator('.terminal-tab');
+        const initialCount = await tabs.count();
+
+        await tmuxButton.click();
+
+        await expect(tabs).toHaveCount(initialCount + 1);
+        await expect(tabs.nth(initialCount)).toContainText('tmux');
+    });
+
     test('switches between terminal tabs', async () => {
         const page = context!.page;
 
